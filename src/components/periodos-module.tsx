@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { Plus, Search, Edit, Eye, Link, Settings } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Plus, Search, Edit, Eye, Link, Upload, Lock, PlayCircle, Trash2, BookOpen } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -10,113 +10,40 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from './ui/table';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Alert, AlertDescription } from './ui/alert';
+import { ScrollArea } from './ui/scroll-area';
 import { toast } from 'sonner@2.0.3';
 
-interface Periodo {
-  id: string;
-  nombre: string;
-  año: number;
-  semestre: '1' | '2';
-  estado: 'CONFIGURACION' | 'ABIERTO' | 'CERRADO';
-  fechaInicio: string;
-  fechaFin: string;
-  enlaceFormulario?: string;
-  electivasOfertadas: Array<{
-    electivaId: string;
-    nombre: string;
-    codigo: string;
-    cuposPorPrograma: Array<{
-      programa: string;
-      cupos: number;
-      inscritos: number;
-    }>;
-  }>;
-}
-
-const mockElectivas = [
-  { id: '1', nombre: 'Inteligencia Artificial', codigo: 'IA-101' },
-  { id: '2', nombre: 'Gestión de Proyectos', codigo: 'GP-102' },
-  { id: '3', nombre: 'Ciberseguridad', codigo: 'CS-103' },
-  { id: '4', nombre: 'Machine Learning', codigo: 'ML-104' },
-  { id: '5', nombre: 'Desarrollo Web', codigo: 'DW-105' }
-];
-
-const mockPeriodos: Periodo[] = [
-  {
-    id: '1',
-    nombre: 'Periodo 2024-1',
-    año: 2024,
-    semestre: '1',
-    estado: 'ABIERTO',
-    fechaInicio: '2024-02-01',
-    fechaFin: '2024-06-30',
-    enlaceFormulario: 'https://forms.universidad.edu/electivas-2024-1',
-    electivasOfertadas: [
-      {
-        electivaId: '1',
-        nombre: 'Inteligencia Artificial',
-        codigo: 'IA-101',
-        cuposPorPrograma: [
-          { programa: 'Ingeniería de Sistemas', cupos: 10, inscritos: 8 },
-          { programa: 'Ingeniería Industrial', cupos: 5, inscritos: 4 },
-          { programa: 'Ingeniería Civil', cupos: 3, inscritos: 2 }
-        ]
-      },
-      {
-        electivaId: '2',
-        nombre: 'Gestión de Proyectos',
-        codigo: 'GP-102',
-        cuposPorPrograma: [
-          { programa: 'Ingeniería de Sistemas', cupos: 8, inscritos: 7 },
-          { programa: 'Ingeniería Civil', cupos: 6, inscritos: 5 },
-          { programa: 'Ingeniería Industrial', cupos: 4, inscritos: 3 }
-        ]
-      }
-    ]
-  },
-  {
-    id: '2',
-    nombre: 'Periodo 2024-2',
-    año: 2024,
-    semestre: '2',
-    estado: 'CONFIGURACION',
-    fechaInicio: '2024-08-01',
-    fechaFin: '2024-12-15',
-    electivasOfertadas: [
-      {
-        electivaId: '3',
-        nombre: 'Ciberseguridad',
-        codigo: 'CS-103',
-        cuposPorPrograma: [
-          { programa: 'Ingeniería de Sistemas', cupos: 12, inscritos: 0 },
-          { programa: 'Ingeniería Industrial', cupos: 4, inscritos: 0 },
-          { programa: 'Ingeniería Civil', cupos: 2, inscritos: 0 }
-        ]
-      }
-    ]
-  },
-  {
-    id: '3',
-    nombre: 'Periodo 2023-2',
-    año: 2023,
-    semestre: '2',
-    estado: 'CERRADO',
-    fechaInicio: '2023-08-01',
-    fechaFin: '2023-12-15',
-    electivasOfertadas: []
-  }
-];
+// Importamos los servicios y tipos
+import { 
+  Periodo, Oferta, 
+  fetchPeriodos, createPeriodo, abrirPeriodo, cerrarFormulario, cargarRespuestasManual,
+  fetchOfertasPorPeriodo, agregarOferta, editarCupos, eliminarOferta,
+  fetchProgramas, fetchElectivas, Programa, Electiva
+} from '../services/api';
 
 export function PeriodosModule() {
-  const [periodos, setPeriodos] = useState<Periodo[]>(mockPeriodos);
+  // Estados principales
+  const [periodos, setPeriodos] = useState<Periodo[]>([]);
+  const [ofertas, setOfertas] = useState<Oferta[]>([]);
+  const [programas, setProgramas] = useState<Programa[]>([]);
+  const [availableElectivas, setAvailableElectivas] = useState<Electiva[]>([]);
+  
+  // Estados de UI
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriodo, setSelectedPeriodo] = useState<Periodo | null>(null);
   const [isCreating, setIsCreating] = useState(false);
-  const [searchElectivas, setSearchElectivas] = useState('');
-  const [editingCupos, setEditingCupos] = useState<{electivaId: string, programa: string} | null>(null);
-  const [newCupos, setNewCupos] = useState(0);
-  const [addingCuposFor, setAddingCuposFor] = useState<{electivaId: string, nombre: string} | null>(null);
-  const [cuposPorPrograma, setCuposPorPrograma] = useState<{[programa: string]: number}>({});
+  
+  // Estados para Modales y Formularios
+  const [isAddingElectiva, setIsAddingElectiva] = useState(false);
+  const [addingCuposFor, setAddingCuposFor] = useState<Electiva | null>(null);
+  const [cuposPorPrograma, setCuposPorPrograma] = useState<Record<string, number>>({});
+  
+  const [isEditingCupos, setIsEditingCupos] = useState(false);
+  const [editingOferta, setEditingOferta] = useState<Oferta | null>(null);
+
+  const [isOpeningPeriod, setIsOpeningPeriod] = useState(false);
+  const [opcionesFormulario, setOpcionesFormulario] = useState(2);
+
   const [formData, setFormData] = useState({
     año: new Date().getFullYear(),
     semestre: '1' as '1' | '2',
@@ -124,182 +51,202 @@ export function PeriodosModule() {
     fechaFin: ''
   });
 
-  const filteredPeriodos = periodos.filter(periodo => 
-    periodo.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-    periodo.año.toString().includes(searchTerm)
-  );
+  // --- Carga de Datos ---
 
-  const getEstadoBadgeVariant = (estado: string) => {
-    switch (estado) {
-      case 'CONFIGURACION': return 'secondary'; // azul
-      case 'ABIERTO': return 'default'; // verde
-      case 'CERRADO': return 'outline';
-      default: return 'secondary';
+  useEffect(() => {
+    loadPeriodos();
+    loadProgramas(); 
+    loadElectivas(); 
+  }, []);
+
+  useEffect(() => {
+    if (selectedPeriodo) {
+      loadOfertas(selectedPeriodo.id);
     }
+  }, [selectedPeriodo]);
+
+  const loadPeriodos = () => {
+    fetchPeriodos()
+      .then(setPeriodos)
+      .catch(err => toast.error(err.message));
   };
 
-  const getEstadoBadge = (estado: Periodo['estado']) => {
-    switch (estado) {
-      case 'CONFIGURACION':
-        return <Badge className="bg-[#0d4f8b] text-white border-[#0d4f8b] hover:bg-[#003366]">CONFIGURACIÓN</Badge>;
-      case 'ABIERTO':
-        return <Badge className="bg-[#28a745] text-white border-[#28a745] hover:bg-[#218838]">ABIERTO</Badge>;
-      case 'CERRADO':
-        return <Badge variant="outline" className="border-[#6c757d] text-[#6c757d]">CERRADO</Badge>;
-    }
+  const loadProgramas = () => {
+    fetchProgramas()
+      .then(setProgramas)
+      .catch(console.error);
   };
 
-  const getEstadoBadgeColor = (estado: string) => {
-    // Keep for backward compatibility but use getEstadoBadge instead
-    switch (estado) {
-      case 'CONFIGURACION': return 'bg-blue-100 text-blue-800 hover:bg-blue-100';
-      case 'ABIERTO': return 'bg-green-100 text-green-800 hover:bg-green-100';
-      case 'CERRADO': return '';
-      default: return '';
-    }
+  const loadElectivas = () => {
+    fetchElectivas()
+      .then(setAvailableElectivas)
+      .catch(console.error);
   };
 
-  const availableElectivas = mockElectivas.filter(electiva => 
-    !selectedPeriodo?.electivasOfertadas.some(ofertada => ofertada.electivaId === electiva.id) &&
-    electiva.nombre.toLowerCase().includes(searchElectivas.toLowerCase())
-  );
+  const loadOfertas = (periodoId: number) => {
+    fetchOfertasPorPeriodo(periodoId)
+      .then(setOfertas)
+      .catch(err => toast.error(err.message));
+  };
 
-  const handleSubmit = () => {
+  // --- Lógica de Negocio ---
+
+  const handleCreatePeriodo = async () => {
     if (!formData.fechaInicio || !formData.fechaFin) {
-      toast.error('Todos los campos son obligatorios');
+      toast.error('Las fechas son obligatorias');
       return;
     }
 
-    const nombre = `Periodo ${formData.año}-${formData.semestre}`;
-    
-    const newPeriodo: Periodo = {
-      id: Date.now().toString(),
-      nombre,
-      ...formData,
-      estado: 'CONFIGURACION',
-      electivasOfertadas: []
-    };
+    const fechaApertura = new Date(formData.fechaInicio).toISOString();
+    const fechaCierre = new Date(formData.fechaFin).toISOString();
+    const semestreStr = `${formData.año}-${formData.semestre}`;
 
-    setPeriodos(prev => [...prev, newPeriodo]);
-    toast.success('Periodo creado exitosamente');
-    setIsCreating(false);
-    setFormData({
-      año: new Date().getFullYear(),
-      semestre: '1',
-      fechaInicio: '',
-      fechaFin: ''
-    });
-  };
-
-  const handleInitAddElectiva = (electiva: typeof mockElectivas[0]) => {
-    setAddingCuposFor({ electivaId: electiva.id, nombre: electiva.nombre });
-    setCuposPorPrograma({});
-  };
-
-  const handleConfirmAddElectiva = () => {
-    if (!selectedPeriodo || !addingCuposFor) return;
-
-    const programasArray = Object.keys(cuposPorPrograma).map(programa => ({
-      programa,
-      cupos: cuposPorPrograma[programa] || 0,
-      inscritos: 0
-    }));
-
-    const totalCupos = Object.values(cuposPorPrograma).reduce((sum, val) => sum + (val || 0), 0);
-    
-    if (totalCupos !== 18) {
-      toast.error('La suma total de cupos debe ser 18');
-      return;
+    try {
+      await createPeriodo({
+        semestre: semestreStr,
+        fechaApertura,
+        fechaCierre
+      });
+      toast.success('Periodo creado exitosamente');
+      setIsCreating(false);
+      loadPeriodos();
+    } catch (err: any) {
+      toast.error(err.message);
     }
-
-    const electiva = mockElectivas.find(e => e.id === addingCuposFor.electivaId);
-    if (!electiva) return;
-
-    const newElectivaOfertada = {
-      electivaId: electiva.id,
-      nombre: electiva.nombre,
-      codigo: electiva.codigo,
-      cuposPorPrograma: programasArray
-    };
-
-    setPeriodos(prev => prev.map(p => 
-      p.id === selectedPeriodo.id 
-        ? { ...p, electivasOfertadas: [...p.electivasOfertadas, newElectivaOfertada] }
-        : p
-    ));
-
-    const updatedPeriodo = { ...selectedPeriodo, electivasOfertadas: [...selectedPeriodo.electivasOfertadas, newElectivaOfertada] };
-    setSelectedPeriodo(updatedPeriodo);
-    toast.success(`${electiva.nombre} agregada al periodo`);
-    setAddingCuposFor(null);
-    setCuposPorPrograma({});
   };
 
-  const handleAddElectiva = handleInitAddElectiva;
-
-  const handleRemoveElectiva = (electivaId: string) => {
+  const handleOpenPeriodo = async () => {
     if (!selectedPeriodo) return;
-
-    setPeriodos(prev => prev.map(p => 
-      p.id === selectedPeriodo.id 
-        ? { ...p, electivasOfertadas: p.electivasOfertadas.filter(e => e.electivaId !== electivaId) }
-        : p
-    ));
-
-    const updatedPeriodo = { 
-      ...selectedPeriodo, 
-      electivasOfertadas: selectedPeriodo.electivasOfertadas.filter(e => e.electivaId !== electivaId) 
-    };
-    setSelectedPeriodo(updatedPeriodo);
-    toast.success('Electiva removida del periodo');
+    try {
+      const res = await abrirPeriodo(selectedPeriodo.id, opcionesFormulario, true); 
+      toast.success(res.mensaje);
+      setSelectedPeriodo(prev => prev ? { ...prev, estado: 'ABIERTO_FORMULARIO', urlFormulario: res.urlFormulario } : null);
+      loadPeriodos(); 
+      setIsOpeningPeriod(false);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
-  const handleUpdateCupos = () => {
-    if (!selectedPeriodo || !editingCupos) return;
-
-    setPeriodos(prev => prev.map(p => 
-      p.id === selectedPeriodo.id 
-        ? {
-            ...p,
-            electivasOfertadas: p.electivasOfertadas.map(e => 
-              e.electivaId === editingCupos.electivaId
-                ? {
-                    ...e,
-                    cuposPorPrograma: e.cuposPorPrograma.map(c => 
-                      c.programa === editingCupos.programa
-                        ? { ...c, cupos: newCupos }
-                        : c
-                    )
-                  }
-                : e
-            )
-          }
-        : p
-    ));
-
-    const updatedPeriodo = {
-      ...selectedPeriodo,
-      electivasOfertadas: selectedPeriodo.electivasOfertadas.map(e => 
-        e.electivaId === editingCupos.electivaId
-          ? {
-              ...e,
-              cuposPorPrograma: e.cuposPorPrograma.map(c => 
-                c.programa === editingCupos.programa
-                  ? { ...c, cupos: newCupos }
-                  : c
-              )
-            }
-          : e
-      )
-    };
-    setSelectedPeriodo(updatedPeriodo);
-    setEditingCupos(null);
-    toast.success('Cupos actualizados exitosamente');
+  const handleCloseFormulario = async () => {
+    if (!selectedPeriodo) return;
+    try {
+      const res = await cerrarFormulario(selectedPeriodo.id);
+      toast.success(res.mensaje);
+      setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
+      loadPeriodos();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
   };
 
-  const openEditCupos = (electivaId: string, programa: string, currentCupos: number) => {
-    setEditingCupos({ electivaId, programa });
-    setNewCupos(currentCupos);
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!selectedPeriodo || !e.target.files?.[0]) return;
+    const file = e.target.files[0];
+    try {
+      const res = await cargarRespuestasManual(selectedPeriodo.id, file);
+      toast.success(res.mensaje);
+      setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
+      loadPeriodos();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // --- Gestión de Oferta ---
+
+  const prepareAddElectiva = (electiva: Electiva) => {
+    setAddingCuposFor(electiva);
+    setCuposPorPrograma({});
+    setIsAddingElectiva(true);
+  };
+
+  const confirmAddElectiva = async () => {
+    if (!selectedPeriodo || !addingCuposFor) return;
+    
+    const cuposMap: Record<number, number> = {};
+    let total = 0;
+
+    Object.entries(cuposPorPrograma).forEach(([progId, cantidad]) => {
+       const cant = parseInt(String(cantidad)) || 0;
+       if (cant > 0) {
+         cuposMap[parseInt(progId)] = cant;
+         total += cant;
+       }
+    });
+
+    if (total !== 18) {
+      toast.error(`La suma total de cupos debe ser 18. Actual: ${total}`);
+      return;
+    }
+
+    try {
+      await agregarOferta(selectedPeriodo.id, parseInt(addingCuposFor.id), cuposMap);
+      toast.success('Electiva agregada a la oferta');
+      setIsAddingElectiva(false);
+      setAddingCuposFor(null);
+      loadOfertas(selectedPeriodo.id);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  const confirmEditCupos = async () => {
+    if (!editingOferta) return;
+    
+    const cuposMap: Record<number, number> = {};
+    let total = 0;
+    Object.entries(cuposPorPrograma).forEach(([progId, cantidad]) => {
+        const cant = parseInt(String(cantidad)) || 0;
+        if (cant > 0) {
+          cuposMap[parseInt(progId)] = cant;
+          total += cant;
+        }
+     });
+
+     if (total !== 18) {
+        toast.error(`La suma total de cupos debe ser 18. Actual: ${total}`);
+        return;
+     }
+
+     try {
+        await editarCupos(editingOferta.id, cuposMap);
+        toast.success('Cupos actualizados');
+        setIsEditingCupos(false);
+        setEditingOferta(null);
+        loadOfertas(selectedPeriodo!.id);
+     } catch (err:any) {
+        toast.error(err.message);
+     }
+  };
+
+  const handleDeleteOferta = async (ofertaId: number) => {
+    try {
+      await eliminarOferta(ofertaId);
+      toast.success('Oferta eliminada');
+      loadOfertas(selectedPeriodo!.id);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // --- Utils UI ---
+  
+  // Filtro: Electivas aprobadas que NO están ya en la oferta del periodo
+  const electivasParaAgregar = availableElectivas.filter(e => 
+    !ofertas.some(o => o.electivaId === parseInt(e.id)) &&
+    e.estado === 'APROBADA'
+  );
+
+  const getEstadoBadge = (estado: string) => {
+    const map: Record<string, any> = {
+      'CONFIGURACION': { label: 'Configuración', variant: 'secondary' },
+      'ABIERTO_FORMULARIO': { label: 'Abierto', variant: 'default', className: 'bg-green-600' },
+      'CERRADO_FORMULARIO': { label: 'Cerrado (Respuestas)', variant: 'secondary' },
+      'PROCESO_CARGA_SIMCA': { label: 'Procesando SIMCA', variant: 'outline' },
+    };
+    const info = map[estado] || { label: estado, variant: 'outline' };
+    return <Badge variant={info.variant} className={info.className}>{info.label}</Badge>;
   };
 
   return (
@@ -308,381 +255,286 @@ export function PeriodosModule() {
         <div className="flex items-center justify-between">
           <div>
             <h1 className="text-[#003366]">Gestión de Periodos Académicos</h1>
-            <p className="text-muted-foreground">Administra los periodos y las electivas ofertadas</p>
+            <p className="text-muted-foreground">Administra los periodos y la oferta académica</p>
           </div>
-          <Dialog open={isCreating} onOpenChange={setIsCreating}>
-            <DialogTrigger asChild>
-              <Button className="bg-[#003366] hover:bg-[#0d4f8b]">
-                <Plus className="h-4 w-4 mr-2" />
-                Nuevo Periodo
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Crear Nuevo Periodo</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <Alert>
-                  <AlertDescription>
-                    El nombre del periodo se generará automáticamente como: Periodo [Año]-[Semestre]
-                  </AlertDescription>
-                </Alert>
-                
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="año">Año *</Label>
-                    <Input
-                      id="año"
-                      type="number"
-                      value={formData.año}
-                      onChange={(e) => setFormData(prev => ({ ...prev, año: parseInt(e.target.value) }))}
-                      min="2020"
-                      max="2030"
-                    />
+          {!selectedPeriodo && (
+            <Dialog open={isCreating} onOpenChange={setIsCreating}>
+              <DialogTrigger asChild>
+                <Button className="bg-[#003366] hover:bg-[#0d4f8b]">
+                  <Plus className="h-4 w-4 mr-2" /> Nuevo Periodo
+                </Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader><DialogTitle>Crear Nuevo Periodo</DialogTitle></DialogHeader>
+                <div className="space-y-4">
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <Label>Año</Label>
+                      <Input type="number" value={formData.año} onChange={e => setFormData({...formData, año: parseInt(e.target.value)})} />
+                    </div>
+                    <div>
+                      <Label>Semestre</Label>
+                      <Select value={formData.semestre} onValueChange={(v: '1'|'2') => setFormData({...formData, semestre: v})}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="1">1</SelectItem>
+                          <SelectItem value="2">2</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div>
-                    <Label htmlFor="semestre">Semestre *</Label>
-                    <Select value={formData.semestre} onValueChange={(value: '1' | '2') => setFormData(prev => ({ ...prev, semestre: value }))}>
-                      <SelectTrigger>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="1">Primer Semestre</SelectItem>
-                        <SelectItem value="2">Segundo Semestre</SelectItem>
-                      </SelectContent>
-                    </Select>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div><Label>Inicio</Label><Input type="date" onChange={e => setFormData({...formData, fechaInicio: e.target.value})} /></div>
+                    <div><Label>Fin</Label><Input type="date" onChange={e => setFormData({...formData, fechaFin: e.target.value})} /></div>
                   </div>
+                  <Button onClick={handleCreatePeriodo} className="w-full">Crear</Button>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="fechaInicio">Fecha de Inicio *</Label>
-                    <Input
-                      id="fechaInicio"
-                      type="date"
-                      value={formData.fechaInicio}
-                      onChange={(e) => setFormData(prev => ({ ...prev, fechaInicio: e.target.value }))}
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="fechaFin">Fecha de Fin *</Label>
-                    <Input
-                      id="fechaFin"
-                      type="date"
-                      value={formData.fechaFin}
-                      onChange={(e) => setFormData(prev => ({ ...prev, fechaFin: e.target.value }))}
-                    />
-                  </div>
-                </div>
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => setIsCreating(false)}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleSubmit}>
-                    Crear Periodo
-                  </Button>
-                </div>
-              </div>
-            </DialogContent>
-          </Dialog>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
       </div>
 
-      <div className="flex-1 overflow-hidden">
+      <div className="flex-1 overflow-hidden p-6">
         {!selectedPeriodo ? (
-          <div className="p-6 space-y-4 h-full overflow-y-auto">
-            <div className="relative">
-              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input
-                placeholder="Buscar periodos..."
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                className="pl-10"
-              />
-            </div>
-
-            <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-              {filteredPeriodos.map((periodo) => (
-                <Card key={periodo.id} className="cursor-pointer hover:shadow-md transition-shadow">
-                  <CardHeader className="pb-3">
-                    <div className="flex items-center justify-between">
-                      <CardTitle className="text-lg">{periodo.nombre}</CardTitle>
-                      {getEstadoBadge(periodo.estado)}
-                    </div>
-                  </CardHeader>
-                  <CardContent>
-                    <div className="space-y-2">
-                      <p><span className="font-medium">Año:</span> {periodo.año}</p>
-                      <p><span className="font-medium">Semestre:</span> {periodo.semestre}</p>
-                      <p><span className="font-medium">Inicio:</span> {periodo.fechaInicio}</p>
-                      <p><span className="font-medium">Fin:</span> {periodo.fechaFin}</p>
-                      <p><span className="font-medium">Electivas:</span> {periodo.electivasOfertadas.length}</p>
-                      {periodo.enlaceFormulario && (
-                        <div className="flex items-center text-sm text-blue-600">
-                          <Link className="h-4 w-4 mr-1" />
-                          Formulario activo
-                        </div>
-                      )}
-                    </div>
-                    <Button 
-                      className="w-full mt-4" 
-                      variant="outline"
-                      onClick={() => setSelectedPeriodo(periodo)}
-                    >
-                      <Eye className="h-4 w-4 mr-2" />
-                      Ver Detalles
-                    </Button>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-
-            {filteredPeriodos.length === 0 && (
-              <div className="text-center py-8">
-                <p className="text-muted-foreground">No se encontraron periodos que coincidan con la búsqueda.</p>
-              </div>
-            )}
-          </div>
-        ) : (
-          <div className="p-6 space-y-6 h-full overflow-y-auto">
-            <div className="flex items-center justify-between">
-              <div>
-                <div className="flex items-center space-x-2">
-                  <Button variant="outline" onClick={() => setSelectedPeriodo(null)}>
-                    ← Volver
-                  </Button>
-                  <h2>{selectedPeriodo.nombre}</h2>
-                  {getEstadoBadge(selectedPeriodo.estado)}
-                </div>
-                <p className="text-muted-foreground">
-                  {selectedPeriodo.estado === 'CONFIGURACION' ? 
-                    'Configurando electivas ofertadas para el periodo' :
-                    selectedPeriodo.estado === 'ABIERTO' ?
-                    'Periodo abierto para inscripciones' :
-                    'Periodo cerrado'
-                  }
-                </p>
-              </div>
-              
-              {selectedPeriodo.enlaceFormulario && selectedPeriodo.estado === 'ABIERTO' && (
-                <div className="text-right">
-                  <p className="text-sm text-muted-foreground">Enlace del formulario:</p>
-                  <a 
-                    href={selectedPeriodo.enlaceFormulario} 
-                    target="_blank" 
-                    rel="noopener noreferrer"
-                    className="text-blue-600 hover:underline text-sm"
-                  >
-                    {selectedPeriodo.enlaceFormulario}
-                  </a>
-                </div>
-              )}
-            </div>
-
-            {selectedPeriodo.estado === 'CONFIGURACION' && (
-              <Card>
-                <CardHeader>
-                  <CardTitle>Buscar Electivas Disponibles</CardTitle>
+          // VISTA LISTA DE PERIODOS
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            {periodos.map(periodo => (
+              <Card key={periodo.id} className="hover:shadow-md transition-shadow">
+                <CardHeader className="pb-3 flex flex-row items-center justify-between">
+                  <CardTitle>{periodo.semestre}</CardTitle>
+                  {getEstadoBadge(periodo.estado)}
                 </CardHeader>
                 <CardContent>
-                  <div className="space-y-4">
-                    <div className="relative">
-                      <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                      <Input
-                        placeholder="Buscar electivas para agregar..."
-                        value={searchElectivas}
-                        onChange={(e) => setSearchElectivas(e.target.value)}
-                        className="pl-10"
-                      />
-                    </div>
-                    
-                    {availableElectivas.length > 0 ? (
-                      <div className="grid gap-2 md:grid-cols-2 lg:grid-cols-3">
-                        {availableElectivas.map((electiva) => (
-                          <div key={electiva.id} className="flex items-center justify-between p-3 border rounded-lg">
-                            <div>
-                              <p className="font-medium">{electiva.nombre}</p>
-                              <p className="text-sm text-muted-foreground">{electiva.codigo}</p>
-                            </div>
-                            <Button 
-                              size="sm" 
-                              onClick={() => handleAddElectiva(electiva)}
-                            >
-                              <Plus className="h-4 w-4" />
-                            </Button>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-muted-foreground text-center py-4">
-                        {searchElectivas ? 'No se encontraron electivas' : 'Todas las electivas ya están agregadas al periodo'}
-                      </p>
-                    )}
+                  <div className="text-sm space-y-1 text-muted-foreground">
+                     <p>Inicio: {new Date(periodo.fechaApertura).toLocaleDateString()}</p>
+                     <p>Fin: {new Date(periodo.fechaCierre).toLocaleDateString()}</p>
                   </div>
+                  <Button variant="outline" className="w-full mt-4" onClick={() => setSelectedPeriodo(periodo)}>
+                    <Eye className="mr-2 h-4 w-4" /> Ver Detalles
+                  </Button>
                 </CardContent>
               </Card>
-            )}
-
-            <Card>
-              <CardHeader>
-                <CardTitle>Electivas Ofertadas ({selectedPeriodo.electivasOfertadas.length})</CardTitle>
-              </CardHeader>
-              <CardContent>
-                {selectedPeriodo.electivasOfertadas.length > 0 ? (
-                  <div className="space-y-4">
-                    {selectedPeriodo.electivasOfertadas.map((electiva) => (
-                      <div key={electiva.electivaId} className="border rounded-lg p-4">
-                        <div className="flex items-center justify-between mb-3">
-                          <div>
-                            <h4 className="font-medium">{electiva.nombre}</h4>
-                            <p className="text-sm text-muted-foreground">{electiva.codigo}</p>
-                          </div>
-                          {selectedPeriodo.estado === 'CONFIGURACION' && (
-                            <AlertDialog>
-                              <AlertDialogTrigger asChild>
-                                <Button variant="outline" size="sm">
-                                  Quitar
-                                </Button>
-                              </AlertDialogTrigger>
-                              <AlertDialogContent>
-                                <AlertDialogHeader>
-                                  <AlertDialogTitle>¿Quitar electiva del periodo?</AlertDialogTitle>
-                                  <AlertDialogDescription>
-                                    Esta acción quitará "{electiva.nombre}" del periodo "{selectedPeriodo.nombre}".
-                                  </AlertDialogDescription>
-                                </AlertDialogHeader>
-                                <AlertDialogFooter>
-                                  <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                  <AlertDialogAction onClick={() => handleRemoveElectiva(electiva.electivaId)}>
-                                    Quitar
-                                  </AlertDialogAction>
-                                </AlertDialogFooter>
-                              </AlertDialogContent>
-                            </AlertDialog>
-                          )}
-                        </div>
-                        
-                        <Table>
-                          <TableHeader>
-                            <TableRow>
-                              <TableHead>Programa</TableHead>
-                              <TableHead>Cupos</TableHead>
-                            </TableRow>
-                          </TableHeader>
-                          <TableBody>
-                            {electiva.cuposPorPrograma.map((cupo, index) => (
-                              <TableRow key={index}>
-                                <TableCell>{cupo.programa}</TableCell>
-                                <TableCell>{cupo.cupos}</TableCell>
-                              </TableRow>
-                            ))}
-                            <TableRow>
-                              <TableCell className="font-medium">Total</TableCell>
-                              <TableCell className="font-medium">
-                                {electiva.cuposPorPrograma.reduce((sum, c) => sum + c.cupos, 0)}
-                              </TableCell>
-                            </TableRow>
-                          </TableBody>
-                        </Table>
-                      </div>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="text-center py-8">
-                    <p className="text-muted-foreground">No hay electivas ofertadas para este periodo.</p>
-                    {selectedPeriodo.estado === 'CONFIGURACION' && (
-                      <p className="text-sm text-muted-foreground mt-2">Utiliza el buscador de arriba para agregar electivas.</p>
-                    )}
-                  </div>
+            ))}
+            {periodos.length === 0 && <p className="text-muted-foreground col-span-2 text-center">No hay periodos registrados.</p>}
+          </div>
+        ) : (
+          // VISTA DETALLE PERIODO
+          <div className="space-y-6 h-full flex flex-col">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-4">
+                <Button variant="outline" onClick={() => setSelectedPeriodo(null)}>← Volver</Button>
+                <h2 className="text-2xl font-bold">{selectedPeriodo.semestre}</h2>
+                {getEstadoBadge(selectedPeriodo.estado)}
+              </div>
+              
+              <div className="flex gap-2">
+                {selectedPeriodo.estado === 'CONFIGURACION' && (
+                   <Dialog open={isOpeningPeriod} onOpenChange={setIsOpeningPeriod}>
+                     <DialogTrigger asChild>
+                       <Button className="bg-green-600 hover:bg-green-700">
+                         <PlayCircle className="mr-2 h-4 w-4"/> Abrir Periodo
+                       </Button>
+                     </DialogTrigger>
+                     <DialogContent>
+                       <DialogHeader><DialogTitle>Abrir Periodo Académico</DialogTitle></DialogHeader>
+                       <div className="space-y-4">
+                         <Alert><AlertDescription>Esto generará el formulario de Google y habilitará la inscripción.</AlertDescription></Alert>
+                         <div>
+                           <Label>Opciones en el formulario</Label>
+                           <Input type="number" min={1} value={opcionesFormulario} onChange={e => setOpcionesFormulario(parseInt(e.target.value))} />
+                         </div>
+                         <Button onClick={handleOpenPeriodo} className="w-full">Confirmar Apertura</Button>
+                       </div>
+                     </DialogContent>
+                   </Dialog>
                 )}
-              </CardContent>
-            </Card>
+
+                {selectedPeriodo.estado === 'ABIERTO_FORMULARIO' && (
+                  <>
+                    <Button variant="outline" onClick={() => window.open(selectedPeriodo.urlFormulario, '_blank')}>
+                       <Link className="mr-2 h-4 w-4"/> Ir al Formulario
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button variant="destructive">
+                          <Lock className="mr-2 h-4 w-4"/> Cerrar Formulario
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>¿Cerrar Inscripciones?</AlertDialogTitle>
+                          <AlertDialogDescription>Se descargarán las respuestas automáticamente de Google Forms.</AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={handleCloseFormulario}>Cerrar</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                    
+                    <div className="relative">
+                      <input type="file" id="upload-manual" className="hidden" onChange={handleFileUpload} accept=".xlsx, .csv" />
+                      <Button variant="secondary" onClick={() => document.getElementById('upload-manual')?.click()}>
+                        <Upload className="mr-2 h-4 w-4"/> Carga Manual
+                      </Button>
+                    </div>
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* CONTENEDOR PRINCIPAL DE CONFIGURACIÓN */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
+              
+              {/* COLUMNA IZQUIERDA: OFERTAS ACTUALES (Ocupa 2 columnas) */}
+              <Card className={`flex flex-col overflow-hidden ${selectedPeriodo.estado === 'CONFIGURACION' ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
+                 <CardHeader>
+                   <CardTitle>Oferta Académica ({ofertas.length})</CardTitle>
+                 </CardHeader>
+                 <CardContent className="flex-1 overflow-y-auto space-y-4 p-6 pt-0">
+                    {ofertas.length === 0 ? (
+                      <div className="text-center py-12 border-2 border-dashed rounded-lg">
+                        <BookOpen className="h-12 w-12 mx-auto text-muted-foreground mb-3"/>
+                        <p className="text-muted-foreground">No hay electivas ofertadas en este periodo.</p>
+                        {selectedPeriodo.estado === 'CONFIGURACION' && <p className="text-sm text-muted-foreground">Agrega una desde el panel derecho.</p>}
+                      </div>
+                    ) : (
+                      ofertas.map(oferta => (
+                          <div key={oferta.id} className="border rounded-lg p-4 shadow-sm">
+                            <div className="flex justify-between items-start mb-2">
+                                <div>
+                                  <h3 className="font-bold text-lg">{oferta.nombreElectiva}</h3>
+                                  <p className="text-sm text-muted-foreground">{oferta.codigoElectiva}</p>
+                                </div>
+                                {selectedPeriodo.estado === 'CONFIGURACION' && (
+                                  <div className="flex gap-2">
+                                    <Button size="sm" variant="outline" onClick={() => {
+                                        setEditingOferta(oferta);
+                                        setCuposPorPrograma(oferta.cuposPorPrograma);
+                                        setIsEditingCupos(true);
+                                    }}>
+                                        <Edit className="h-4 w-4"/>
+                                    </Button>
+                                    <Button size="sm" variant="destructive" onClick={() => handleDeleteOferta(oferta.id)}>
+                                        <Trash2 className="h-4 w-4"/>
+                                    </Button>
+                                  </div>
+                                )}
+                            </div>
+                            <Table>
+                                <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="h-8">Programa</TableHead><TableHead className="h-8 text-right">Cupos</TableHead></TableRow></TableHeader>
+                                <TableBody>
+                                  {Object.entries(oferta.cuposPorPrograma).map(([progId, cupos]) => {
+                                      const progNombre = programas.find(p => p.id === String(progId))?.nombre || `Programa ${progId}`;
+                                      return (
+                                        <TableRow key={progId} className="border-b-0 hover:bg-transparent">
+                                          <TableCell className="py-1">{progNombre}</TableCell>
+                                          <TableCell className="py-1 text-right font-medium">{cupos}</TableCell>
+                                        </TableRow>
+                                      )
+                                  })}
+                                </TableBody>
+                            </Table>
+                          </div>
+                      ))
+                    )}
+                 </CardContent>
+              </Card>
+
+              {/* COLUMNA DERECHA: ELECTIVAS DISPONIBLES (Ocupa 1 columna, SOLO visible en CONFIGURACION) */}
+              {selectedPeriodo.estado === 'CONFIGURACION' && (
+                <Card className="flex flex-col overflow-hidden border-l-4 border-l-[#FDB913]">
+                   <CardHeader className="bg-muted/20 pb-4">
+                     <CardTitle className="text-base">Electivas Disponibles</CardTitle>
+                     <p className="text-xs text-muted-foreground">Haz clic en + para agregar a la oferta</p>
+                   </CardHeader>
+                   <CardContent className="flex-1 p-0 overflow-hidden">
+                     <ScrollArea className="h-[500px]">
+                       <div className="divide-y">
+                         {electivasParaAgregar.length === 0 ? (
+                           <p className="p-8 text-sm text-center text-muted-foreground">
+                             No hay más electivas aprobadas disponibles para agregar.
+                           </p>
+                         ) : (
+                           electivasParaAgregar.map(elec => (
+                             <div key={elec.id} className="p-3 hover:bg-accent flex justify-between items-center group transition-colors">
+                                <div className="overflow-hidden">
+                                   <p className="font-medium text-sm truncate" title={elec.nombre}>{elec.nombre}</p>
+                                   <p className="text-xs text-muted-foreground">{elec.codigo}</p>
+                                </div>
+                                <Button size="sm" variant="ghost" className="h-8 w-8 p-0 bg-primary/10 text-primary hover:bg-primary hover:text-primary-foreground" onClick={() => prepareAddElectiva(elec)}>
+                                   <Plus className="h-5 w-5"/>
+                                </Button>
+                             </div>
+                           ))
+                         )}
+                       </div>
+                     </ScrollArea>
+                   </CardContent>
+                </Card>
+              )}
+
+            </div>
           </div>
         )}
       </div>
 
-      <Dialog open={!!editingCupos} onOpenChange={(open) => !open && setEditingCupos(null)}>
+      {/* MODAL: AGREGAR ELECTIVA (CUPOS) */}
+      <Dialog open={isAddingElectiva} onOpenChange={setIsAddingElectiva}>
         <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Editar Cupos por Programa</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <div>
-              <Label htmlFor="nuevos-cupos">Número de Cupos</Label>
-              <Input
-                id="nuevos-cupos"
-                type="number"
-                value={newCupos}
-                onChange={(e) => setNewCupos(parseInt(e.target.value) || 0)}
-                min="0"
-              />
-            </div>
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setEditingCupos(null)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleUpdateCupos}>
-                Guardar Cambios
-              </Button>
-            </div>
-          </div>
-        </DialogContent>
-      </Dialog>
-
-      {/* Modal para agregar cupos por programa */}
-      <Dialog open={!!addingCuposFor} onOpenChange={(open) => !open && setAddingCuposFor(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Asignar Cupos por Programa</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4">
-            <Alert>
-              <AlertDescription>
-                Electiva: <span className="font-medium">{addingCuposFor?.nombre}</span>
-                <br />
-                La suma total de cupos debe ser exactamente 18.
-              </AlertDescription>
-            </Alert>
-
-            <div className="space-y-3">
-              {['Ingeniería de Sistemas', 'Ingeniería Civil', 'Ingeniería Industrial'].map((programa) => (
-                <div key={programa}>
-                  <Label htmlFor={`cupos-${programa}`}>¿Cuántos cupos para {programa}?</Label>
-                  <Input
-                    id={`cupos-${programa}`}
-                    type="number"
-                    min="0"
-                    max="18"
-                    value={cuposPorPrograma[programa] || ''}
-                    onChange={(e) => setCuposPorPrograma(prev => ({
-                      ...prev,
-                      [programa]: parseInt(e.target.value) || 0
-                    }))}
-                    placeholder="0"
-                  />
-                </div>
+           <DialogHeader><DialogTitle>Definir Cupos: {addingCuposFor?.nombre}</DialogTitle></DialogHeader>
+           <div className="space-y-4">
+              <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>
+              
+              {/* CORRECCIÓN CRÍTICA AQUÍ: Validación de programas con ?. y fallback a [] */}
+              {(addingCuposFor?.programas || []).map(prog => (
+                  <div key={prog.id} className="flex justify-between items-center">
+                      <Label className="w-2/3">{prog.nombre}</Label>
+                      <Input 
+                        type="number" 
+                        className="w-20" 
+                        value={cuposPorPrograma[prog.id] || ''} 
+                        onChange={e => setCuposPorPrograma({...cuposPorPrograma, [prog.id]: parseInt(e.target.value)})}
+                      />
+                  </div>
               ))}
-            </div>
-
-            <div className="p-3 bg-muted rounded-lg">
-              <p className="text-sm">
-                <span className="font-medium">Total de cupos:</span>{' '}
-                <span className={Object.values(cuposPorPrograma).reduce((sum, val) => sum + (val || 0), 0) === 18 ? 'text-green-600' : 'text-red-600'}>
-                  {Object.values(cuposPorPrograma).reduce((sum, val) => sum + (val || 0), 0)} / 18
-                </span>
-              </p>
-            </div>
-
-            <div className="flex justify-end space-x-2">
-              <Button variant="outline" onClick={() => setAddingCuposFor(null)}>
-                Cancelar
-              </Button>
-              <Button onClick={handleConfirmAddElectiva}>
-                Agregar Electiva
-              </Button>
-            </div>
-          </div>
+              
+              <div className="flex justify-between font-bold pt-2 border-t">
+                 <span>Total:</span>
+                 <span className={Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0) === 18 ? 'text-green-600' : 'text-red-600'}>
+                    {Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0)} / 18
+                 </span>
+              </div>
+              <Button onClick={confirmAddElectiva} className="w-full">Agregar a Oferta</Button>
+           </div>
         </DialogContent>
       </Dialog>
+
+      {/* MODAL: EDITAR CUPOS */}
+      <Dialog open={isEditingCupos} onOpenChange={setIsEditingCupos}>
+         <DialogContent>
+            <DialogHeader><DialogTitle>Editar Cupos</DialogTitle></DialogHeader>
+            <div className="space-y-4">
+              {editingOferta && Object.keys(editingOferta.cuposPorPrograma).map(progId => {
+                   const progName = programas.find(p => p.id === String(progId))?.nombre || progId;
+                   return (
+                     <div key={progId} className="flex justify-between items-center">
+                        <Label className="w-2/3">{progName}</Label>
+                        <Input 
+                           type="number" 
+                           className="w-20" 
+                           value={cuposPorPrograma[progId]} 
+                           onChange={e => setCuposPorPrograma({...cuposPorPrograma, [progId]: parseInt(e.target.value)})}
+                        />
+                     </div>
+                   )
+              })}
+              <Button onClick={confirmEditCupos} className="w-full">Guardar Cambios</Button>
+            </div>
+         </DialogContent>
+      </Dialog>
+
     </div>
   );
 }

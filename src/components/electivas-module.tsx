@@ -11,12 +11,17 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Textarea } from './ui/textarea';
 import { Switch } from './ui/switch';
 import { toast } from 'sonner@2.0.3';
-import { Electiva, fetchElectivas, createElectiva, updateElectiva, approveElectiva, deactivateElectiva, reactivateElectiva } from '../services/api';
+import { Electiva, fetchElectivas, createElectiva, updateElectiva, approveElectiva, deactivateElectiva, reactivateElectiva, fetchDepartamentos, fetchProgramas } from '../services/api';
+
+
 
 export function ElectivasModule() {
   const [electivas, setElectivas] = useState<Electiva[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [filtroEstado, setFiltroEstado] = useState<string>('TODOS');
+  const [programas, setProgramas] = useState<{ id: number; nombre: string }[]>([]);
+  const [departamentos, setDepartamentos] = useState<{ id: number; nombre: string }[]>([]);
+  const [editFormData, setEditFormData] = useState<Omit<Electiva, 'id' | 'estado' | 'fechaCreacion'> | null>(null);
   const [showInactive, setShowInactive] = useState(false);
   const [isCreating, setIsCreating] = useState(false);
   const [editingElectiva, setEditingElectiva] = useState<Electiva | null>(null);
@@ -29,25 +34,37 @@ export function ElectivasModule() {
 
   });
 
-  const programas = [
-  { id: 1, nombre: 'Ingeniería de Sistemas' },
-  { id: 2, nombre: 'Ingeniería Civil' },
-  { id: 3, nombre: 'Ingeniería Industrial' },
-];
-
-  const departamentos = [
-    { id: '1', nombre: 'Ciencias de la Computación' },
-    { id: '2', nombre: 'Ingeniería Industrial' },
-    { id: '3', nombre: 'Ingeniería Civil' },
-    { id: '4', nombre: 'Matemáticas' }
-  ];
 
   // Traer electivas desde backend
   useEffect(() => {
-    fetchElectivas()
-      .then(setElectivas)
-      .catch(err => toast.error(err.message));
-  }, []);
+  const loadData = async () => {
+    try {
+      const [electivasData, departamentosData, programasData] = await Promise.all([
+        fetchElectivas(),
+        fetchDepartamentos(),
+        fetchProgramas()
+      ]);
+
+      setDepartamentos(departamentosData);
+      setProgramas(programasData);
+
+      const normalizedElectivas = electivasData.map((e: any) => ({
+      ...e,
+      programasIds: e.programas ? e.programas.map((p: any) => p.id) : [],
+    }));
+
+
+      setElectivas(normalizedElectivas);
+
+    } catch (err: any) {
+      toast.error(err.message || "Error al cargar datos iniciales");
+    }
+  };
+
+  loadData();
+}, []);
+
+
 
   const filteredElectivas = electivas.filter(electiva => {
     const matchesSearch =
@@ -86,7 +103,11 @@ export function ElectivasModule() {
         toast.success('Electiva actualizada');
       } else {
         const created = await createElectiva(formData);
-        setElectivas(prev => [...prev, created]);
+        const normalized = {
+          ...created,
+          programasIds: created.programas.map((p: any) => p.id)
+        };
+        setElectivas(prev => [...prev, normalized]);
         setIsCreating(false);
         toast.success('Electiva creada');
       }
@@ -102,15 +123,45 @@ export function ElectivasModule() {
   };
 
   const handleEdit = (electiva: Electiva) => {
-    setFormData({
-      nombre: electiva.nombre,
-      codigo: electiva.codigo,
-      descripcion: electiva.descripcion,
-      departamentoId: electiva.departamentoId,
-      programasIds: [...electiva.programasIds]
-    });
-    setEditingElectiva(electiva);
-  };
+  setEditingElectiva(electiva);
+  setEditFormData({
+    nombre: electiva.nombre,
+    codigo: electiva.codigo,
+    descripcion: electiva.descripcion,
+    departamentoId: electiva.departamentoId,
+    programasIds: [...electiva.programasIds],
+  });
+};
+
+  const handleSubmitEdit = async () => {
+  if (!editFormData || !editingElectiva) return;
+  if (!editFormData.nombre || !editFormData.codigo || !editFormData.departamentoId) {
+    toast.error('Nombre, código y departamento son obligatorios');
+    return;
+  }
+  if (editFormData.programasIds.length === 0) {
+    toast.error('Debe seleccionar al menos un programa');
+    return;
+  }
+
+  try {
+    const updated = await updateElectiva(editingElectiva.id, editFormData);
+
+    // Normaliza para incluir programasIds
+    const normalized = {
+      ...updated,
+      programasIds: updated.programas ? updated.programas.map((p: any) => p.id) : [],
+    };
+
+    setElectivas(prev => prev.map(e => e.id === normalized.id ? normalized : e));
+    setEditingElectiva(null);
+    setEditFormData(null);
+    toast.success('Electiva actualizada');
+
+  } catch (err: any) {
+    toast.error(err.message || 'Error al actualizar electiva');
+  }
+};
 
   const handleApprove = async (electivaId: string) => {
     try {
@@ -141,7 +192,6 @@ export function ElectivasModule() {
   }
 };
 
-
   const handleReactivate = async (electivaId: string) => {
     try {
       const updated = await reactivateElectiva(electivaId);
@@ -161,6 +211,17 @@ export function ElectivasModule() {
   }));
 };
 
+  const toggleProgramaEdit = (programaId: number) => {
+    if (!editFormData) return;
+    setEditFormData({
+      ...editFormData,
+      programasIds: editFormData.programasIds.includes(programaId)
+        ? editFormData.programasIds.filter(id => id !== programaId)
+        : [...editFormData.programasIds, programaId]
+    });
+};
+
+
 
   return (
     <div className="flex flex-col h-full">
@@ -171,54 +232,56 @@ export function ElectivasModule() {
             <p className="text-muted-foreground">Administra las materias electivas disponibles</p>
           </div>
           <Dialog open={isCreating} onOpenChange={setIsCreating}>
-            <DialogTrigger asChild>
-              <Button>
-                <Plus className="h-4 w-4 mr-2" />
-                Nueva Electiva
-              </Button>
-            </DialogTrigger>
-            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-              <DialogHeader>
-                <DialogTitle>Crear Nueva Electiva</DialogTitle>
-              </DialogHeader>
-              <div className="space-y-4">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <Label htmlFor="nombre">Nombre de la Electiva *</Label>
-                    <Input
-                      id="nombre"
-                      value={formData.nombre}
-                      onChange={(e) => setFormData(prev => ({ ...prev, nombre: e.target.value }))}
-                      placeholder="Ej: Inteligencia Artificial"
-                    />
-                  </div>
-                  <div>
-                    <Label htmlFor="codigo">Código *</Label>
-                    <Input
-                      id="codigo"
-                      value={formData.codigo}
-                      onChange={(e) => setFormData(prev => ({ ...prev, codigo: e.target.value }))}
-                      placeholder="Ej: IA-101"
-                    />
-                  </div>
-                </div>
-                
+          <DialogTrigger asChild>
+            <Button>
+              <Plus className="h-4 w-4 mr-2" />
+              Nueva Electiva
+            </Button>
+          </DialogTrigger>
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+            <DialogHeader>
+              <DialogTitle>Crear Nueva Electiva</DialogTitle>
+            </DialogHeader>
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <Label htmlFor="descripcion">Descripción</Label>
-                  <Textarea
-                    id="descripcion"
-                    value={formData.descripcion}
-                    onChange={(e) => setFormData(prev => ({ ...prev, descripcion: e.target.value }))}
-                    placeholder="Descripción de la electiva"
-                    rows={3}
+                  <Label htmlFor="nombre">Nombre de la Electiva *</Label>
+                  <Input
+                    id="nombre"
+                    value={formData.nombre}
+                    onChange={(e) => setFormData({ ...formData, nombre: e.target.value })}
+                    placeholder="Ej: Inteligencia Artificial"
                   />
                 </div>
-
                 <div>
-                  <Label htmlFor="departamento">Departamento</Label>
-                  <Select
-                  value={String(formData.departamentoId)}
-                  onValueChange={(value) => setFormData(prev => ({ ...prev, departamentoId: Number(value) }))}
+                  <Label htmlFor="codigo">Código *</Label>
+                  <Input
+                    id="codigo"
+                    value={formData.codigo}
+                    onChange={(e) => setFormData({ ...formData, codigo: e.target.value })}
+                    placeholder="Ej: IA-101"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <Label htmlFor="descripcion">Descripción</Label>
+                <Textarea
+                  id="descripcion"
+                  value={formData.descripcion}
+                  onChange={(e) => setFormData({ ...formData, descripcion: e.target.value })}
+                  placeholder="Descripción de la electiva"
+                  rows={3}
+                />
+              </div>
+
+              <div>
+                <Label htmlFor="departamento">Departamento</Label>
+                <Select
+                  value={String(formData.departamentoId || 0)}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, departamentoId: Number(value) })
+                  }
                 >
                   <SelectTrigger>
                     <SelectValue placeholder="Selecciona departamento" />
@@ -231,12 +294,12 @@ export function ElectivasModule() {
                     ))}
                   </SelectContent>
                 </Select>
-                </div>
+              </div>
 
-                <div>
-                  <Label>Programas Disponibles *</Label>
-                  <div className="space-y-2 mt-2">
-                    {programas.map((programa) => (
+              <div>
+                <Label>Programas Disponibles *</Label>
+                <div className="space-y-2 mt-2">
+                  {programas.map((programa) => (
                     <div key={programa.id} className="flex items-center space-x-2">
                       <input
                         type="checkbox"
@@ -245,25 +308,33 @@ export function ElectivasModule() {
                         onChange={() => togglePrograma(programa.id)}
                         className="h-4 w-4"
                       />
-                      <Label htmlFor={`programa-${programa.id}`} className="font-normal cursor-pointer">
+                      <Label
+                        htmlFor={`programa-${programa.id}`}
+                        className="font-normal cursor-pointer"
+                      >
                         {programa.nombre}
                       </Label>
                     </div>
                   ))}
-                  </div>
-                </div>
-
-                <div className="flex justify-end space-x-2">
-                  <Button variant="outline" onClick={() => { setIsCreating(false); resetForm(); }}>
-                    Cancelar
-                  </Button>
-                  <Button onClick={handleSubmit}>
-                    Crear Electiva
-                  </Button>
                 </div>
               </div>
-            </DialogContent>
-          </Dialog>
+
+              <div className="flex justify-end space-x-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setIsCreating(false);
+                    resetForm();
+                  }}
+                >
+                  Cancelar
+                </Button>
+                <Button onClick={handleSubmit}>Crear Electiva</Button>
+              </div>
+            </div>
+          </DialogContent>
+        </Dialog>
+
         </div>
       </div>
 
@@ -320,7 +391,7 @@ export function ElectivasModule() {
                 <div className="space-y-2">
                   <p>
                     <span className="font-medium">Departamento:</span>{" "}
-                    {departamentos.find(dep => dep.id === String(electiva.departamentoId))?.nombre || "Sin asignar"}
+                    {departamentos.find(dep => dep.id === electiva.departamentoId)?.nombre || "Sin asignar"}
                   </p>
 
                   {electiva.descripcion && (
@@ -329,7 +400,7 @@ export function ElectivasModule() {
                  <div>
                     <span className="font-medium">Programas:</span>
                     <div className="mt-1 flex flex-wrap gap-1">
-                      {electiva.programasIds.map((id) => {
+                      {(electiva.programasIds || []).map((id) => {
                         const programa = programas.find(p => p.id === id);
                         return (
                           <Badge key={id} variant="outline">
@@ -342,7 +413,16 @@ export function ElectivasModule() {
                 </div>
                 
                 <div className="flex flex-wrap gap-2 mt-4">
-                  <Dialog open={editingElectiva?.id === electiva.id} onOpenChange={(open) => !open && setEditingElectiva(null)}>
+                  <Dialog 
+                  open={editingElectiva?.id === electiva.id} 
+                  onOpenChange={(open) => {
+                    if (!open) {
+                      setEditingElectiva(null);
+                      setTimeout(() => setEditFormData(null), 100); // evita error de render inmediato
+                    }
+                  }}
+                >
+
                     <DialogTrigger asChild>
                       <Button 
                         variant="outline" 
@@ -363,16 +443,16 @@ export function ElectivasModule() {
                             <Label htmlFor="edit-nombre">Nombre de la Electiva *</Label>
                             <Input
                               id="edit-nombre"
-                              value={formData.nombre}
-                              onChange={(e) => setFormData(prev => ({ ...prev, nombre: e.target.value }))}
+                              value={editFormData?.nombre || ''}
+                              onChange={(e) => setEditFormData(prev => prev ? { ...prev, nombre: e.target.value } : null)}
                             />
                           </div>
                           <div>
                             <Label htmlFor="edit-codigo">Código *</Label>
                             <Input
                               id="edit-codigo"
-                              value={formData.codigo}
-                              onChange={(e) => setFormData(prev => ({ ...prev, codigo: e.target.value }))}
+                              value={editFormData?.codigo || ''}
+                              onChange={(e) => setEditFormData(prev => prev ? { ...prev, codigo: e.target.value } : null)}
                             />
                           </div>
                         </div>
@@ -381,26 +461,24 @@ export function ElectivasModule() {
                           <Label htmlFor="edit-descripcion">Descripción</Label>
                           <Textarea
                             id="edit-descripcion"
-                            value={formData.descripcion}
-                            onChange={(e) => setFormData(prev => ({ ...prev, descripcion: e.target.value }))}
+                            value={editFormData?.descripcion || ''}
+                            onChange={(e) => setEditFormData(prev => prev ? { ...prev, descripcion: e.target.value } : null)}
                             rows={3}
                           />
                         </div>
-
+                        
                         <div>
                           <Label htmlFor="edit-departamento">Departamento</Label>
                           <Select
-                          value={String(formData.departamentoId)}
-                          onValueChange={(value) => setFormData(prev => ({ ...prev, departamentoId: Number(value) }))}
+                          value={String(editFormData?.departamentoId || 0)}
+                          onValueChange={(value) => setEditFormData(prev => prev ? { ...prev, departamentoId: Number(value) } : null)}
                         >
                           <SelectTrigger>
                             <SelectValue placeholder="Selecciona departamento" />
                           </SelectTrigger>
                           <SelectContent>
-                            {departamentos.map((dep) => (
-                              <SelectItem key={dep.id} value={String(dep.id)}>
-                                {dep.nombre}
-                              </SelectItem>
+                            {departamentos.map(dep => (
+                              <SelectItem key={dep.id} value={String(dep.id)}>{dep.nombre}</SelectItem>
                             ))}
                           </SelectContent>
                         </Select>
@@ -409,16 +487,16 @@ export function ElectivasModule() {
                         <div>
                           <Label>Programas Disponibles *</Label>
                           <div className="space-y-2 mt-2">
-                            {programas.map((programa) => (
+                            {programas.map(programa => (
                             <div key={programa.id} className="flex items-center space-x-2">
                               <input
                                 type="checkbox"
-                                id={`programa-${programa.id}`}
-                                checked={formData.programasIds.includes(programa.id)}
-                                onChange={() => togglePrograma(programa.id)}
+                                id={`edit-programa-${programa.id}`}
+                                checked={editFormData?.programasIds.includes(programa.id) || false}
+                                onChange={() => toggleProgramaEdit(programa.id)}
                                 className="h-4 w-4"
                               />
-                              <Label htmlFor={`programa-${programa.id}`} className="font-normal cursor-pointer">
+                              <Label htmlFor={`edit-programa-${programa.id}`} className="font-normal cursor-pointer">
                                 {programa.nombre}
                               </Label>
                             </div>
@@ -431,7 +509,7 @@ export function ElectivasModule() {
                           <Button variant="outline" onClick={() => setEditingElectiva(null)}>
                             Cancelar
                           </Button>
-                          <Button onClick={handleSubmit}>
+                          <Button onClick={handleSubmitEdit}>
                             Guardar Cambios
                           </Button>
                         </div>
