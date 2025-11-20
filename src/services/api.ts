@@ -20,15 +20,14 @@ export interface Programa {
   fechaCreacion: string;
 }
 
-// CAMBIO AQUÍ: Ajustamos para recibir la lista de objetos programas
 export interface Electiva {
   id: string;
   nombre: string;
   codigo: string;
   descripcion: string;
   departamentoId: number;
-  departamentoNombre?: string; // Opcional, útil para mostrar
-  programas: { id: number; nombre: string }[]; // El backend envía esto
+  departamentoNombre?: string;
+  programas: { id: number; nombre: string }[];
   estado: 'PENDIENTE' | 'APROBADA' | 'RECHAZADA' | 'INACTIVA';
   fechaCreacion: string;
 }
@@ -38,7 +37,7 @@ export interface Periodo {
   semestre: string;
   fechaApertura: string;
   fechaCierre: string;
-  estado: 'CONFIGURACION' | 'ABIERTO_FORMULARIO' | 'CERRADO_FORMULARIO' | 'EN_PROCESO_ASIGNACION' | 'CERRADO' | 'PROCESO_CARGA_SIMCA' | 'PROCESO_REVISION_POTENCIALES_NIVELADOS' | 'PROCESO_CALCULO_AVANCE' | 'PROCESO_CALCULO_APTITUD';
+  estado: string; 
   numeroOpcionesFormulario?: number;
   urlFormulario?: string;
 }
@@ -52,6 +51,76 @@ export interface Oferta {
   nombrePeriodo: string;
   estado: 'OFERTADA' | 'EN_CURSO' | 'CERRADA';
   cuposPorPrograma: Record<string, number>;
+}
+
+export interface RespuestaFormulario {
+  id: number;
+  codigoEstudiante: string;
+  correoEstudiante: string;
+  nombreEstudiante: string;
+  apellidosEstudiante: string;
+  programaNombre: string;
+  periodoSemestre: string;
+  timestampRespuesta: string;
+  estado: string;
+  electivasSeleccionadas: {
+    opcionNum: number;
+    nombreElectiva: string;
+  }[];
+}
+
+export interface CambioEstadoValidacionResponse {
+  periodoId: number;
+  semestre: string;
+  nuevoEstado: string;
+  mensaje: string;
+}
+
+export interface InconsistenciaDto {
+  respuestaId: number | null;
+  codigoEstudianteCsv: string;
+  nombreEstudianteCsv: string;
+  error: string;
+  archivoOrigen: string;
+}
+
+export interface SimcaCargaResponse {
+  mensaje: string;
+  archivosProcesados: number;
+  registrosCargadosExitosamente: number;
+  inconsistenciasEncontradas: number;
+  detalleInconsistencias: InconsistenciaDto[];
+}
+
+export interface DatosAcademicoResponse {
+  id: number;
+  codigoEstudiante: string;
+  apellidos: string;
+  nombres: string;
+  programa: string;
+  creditosAprobados: number;
+  periodosMatriculados: number;
+  promedioCarrera: number;
+  aprobadas: number;
+  esNivelado: boolean;
+  porcentajeAvance: number;
+  estadoAptitud: string;
+}
+
+export interface VerificacionNiveladoDTO {
+    codigoEstudiante: string;
+    nombre: string;
+    programa: string;
+    nivelado: boolean;
+    semestreVerificado: number;
+    mensajeResumen: string;
+    comparacionMaterias: {
+        nombre: string;
+        semestre: number;
+        obligatoria: boolean;
+        aprobada: boolean;
+        observacion: string;
+    }[];
 }
 
 // ==========================================
@@ -126,31 +195,17 @@ export async function disablePrograma(id: string): Promise<Programa> {
   return res.json();
 }
 
+// ==========================================
+//             ELECTIVAS
+// ==========================================
 
-
-
-
-// --------------------- Electivas ---------------------
-export interface Electiva {
-  id: string;
-  nombre: string;
-  codigo: string;
-  descripcion: string;
-  departamentoId: number;
-  programasIds: number[];
-  estado: 'PENDIENTE' | 'APROBADA' | 'RECHAZADA' | 'INACTIVA';
-  fechaCreacion: string;
-}
-
-// Listar todas las electivas
 export async function fetchElectivas(): Promise<Electiva[]> {
   const res = await fetch(`${API_URL}/api/electivas`);
   if (!res.ok) throw new Error("Error al obtener electivas");
   return res.json();
 }
 
-// Crear una electiva
-export async function createElectiva(electiva: Omit<Electiva, "id" | "estado" | "fechaCreacion">): Promise<Electiva> {
+export async function createElectiva(electiva: any): Promise<Electiva> {
   const res = await fetch(`${API_URL}/api/electivas`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -163,37 +218,27 @@ export async function createElectiva(electiva: Omit<Electiva, "id" | "estado" | 
   return res.json();
 }
 
-// Obtener electiva por ID
 export async function fetchElectivaById(id: string): Promise<Electiva> {
   const res = await fetch(`${API_URL}/api/electivas/${id}`);
   if (!res.ok) throw new Error("Error al obtener la electiva");
   return res.json();
 }
 
-// Actualizar electiva
-export async function updateElectiva(id: string, electiva: Partial<Electiva>): Promise<Electiva> {
+export async function updateElectiva(id: string, electiva: any): Promise<Electiva> {
   const res = await fetch(`${API_URL}/api/electivas/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(electiva),
   });
-  if (!res.ok) throw new Error("Error al actualizar electiva");
-  
-  const data = await res.json();
-
-  // 🔧 Normaliza para evitar errores al renderizar
-  return {
-    ...data,
-    programas: data.programas || [],
-  };
+  if (!res.ok) {
+    const data = await res.json();
+    throw new Error(data?.message || "Error al actualizar electiva");
+  }
+  return { ...data, programas: data.programas || [] };
 }
 
-
-// Aprobar electiva
 export async function approveElectiva(id: string): Promise<Electiva> {
-  const res = await fetch(`${API_URL}/api/electivas/${id}/aprobar`, {
-    method: "PATCH",
-  });
+  const res = await fetch(`${API_URL}/api/electivas/${id}/aprobar`, { method: "PATCH" });
   if (!res.ok) {
     const data = await res.json();
     throw new Error(data?.message || "Error al aprobar electiva");
@@ -201,11 +246,8 @@ export async function approveElectiva(id: string): Promise<Electiva> {
   return res.json();
 }
 
-// Desactivar electiva
 export async function deactivateElectiva(id: string): Promise<Electiva> {
-  const res = await fetch(`${API_URL}/api/electivas/${id}/desactivar`, {
-    method: "PATCH",
-  });
+  const res = await fetch(`${API_URL}/api/electivas/${id}/desactivar`, { method: "PATCH" });
   if (!res.ok) {
     const data = await res.json();
     throw new Error(data?.message || "Error al desactivar electiva");
@@ -213,46 +255,38 @@ export async function deactivateElectiva(id: string): Promise<Electiva> {
   return res.json();
 }
 
-// Reactivar electiva
 export async function reactivateElectiva(id: string): Promise<Electiva> {
-  const res = await fetch(`${API_URL}/api/electivas/${id}/reactivar`, {
-    method: "PATCH",
-  });
+  const res = await fetch(`${API_URL}/api/electivas/${id}/reactivar`, { method: "PATCH" });
   if (!res.ok) {
     const data = await res.json();
     throw new Error(data?.message || "Error al reactivar electiva");
   }
   return res.json();
-};
+}
 
-// --------------------- Planes de estudio ---------------------
+// ==========================================
+//             PLANES DE ESTUDIO
+// ==========================================
 
-// 1. Crear un nuevo plan
 export const crearPlan = async (payload: any) => {
   const response = await fetch(`${API_URL}/api/programas/${payload.programaId}/planes`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload)
   });
-
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
     throw new Error(errorData.message || 'Error al crear plan');
   }
-
   return await response.json();
 };
 
-
-
-// 2. Listar planes de un programa
 export async function listarPlanes(programaId: number) {
   const response = await fetch(`${API_URL}/api/programas/${programaId}/planes`);
   if (!response.ok) throw new Error('Error al listar planes');
   return response.json();
 }
 
-// 3. Modificar un plan
 export async function modificarPlan(programaId: number, planId: number, data: any) {
   const response = await fetch(`${API_URL}/api/programas/${programaId}/planes/${planId}`, {
     method: 'PUT',
@@ -263,31 +297,26 @@ export async function modificarPlan(programaId: number, planId: number, data: an
   return response.json();
 }
 
-// 4. Cargar malla
 export async function cargarMalla(programaId: number, planId: number, file: File, configuration: any) {
   const formData = new FormData();
   formData.append('file', file);
   formData.append('configuration', JSON.stringify(configuration));
-
   const response = await fetch(`${API_URL}/api/programas/${programaId}/planes/${planId}/malla`, {
     method: 'POST',
     body: formData,
   });
-
   if (!response.ok) throw new Error('Error al cargar malla');
   return response.json();
 }
 
-
 // ==========================================
-//        PERIODOS ACADÉMICOS
+//             PERIODOS ACADÉMICOS
 // ==========================================
 
 export async function fetchPeriodos(semestre?: string, estado?: string): Promise<Periodo[]> {
   const params = new URLSearchParams();
   if (semestre) params.append("semestreTexto", semestre);
   if (estado && estado !== 'TODOS') params.append("estado", estado);
-
   const res = await fetch(`${API_URL}/api/periodos-academicos?${params.toString()}`);
   if (!res.ok) throw new Error("Error al obtener periodos");
   return res.json();
@@ -334,12 +363,10 @@ export async function cerrarFormulario(id: number) {
 export async function cargarRespuestasManual(id: number, file: File) {
   const formData = new FormData();
   formData.append("file", file);
-
   const res = await fetch(`${API_URL}/api/periodos-academicos/${id}/cargar-respuestas`, {
     method: "POST",
     body: formData,
   });
-
   if (!res.ok) {
     const error = await res.json();
     throw new Error(error.message || "Error al cargar respuestas");
@@ -348,7 +375,7 @@ export async function cargarRespuestasManual(id: number, file: File) {
 }
 
 // ==========================================
-//        OFERTA ACADÉMICA
+//             OFERTA ACADÉMICA
 // ==========================================
 
 export async function fetchOfertasPorPeriodo(periodoId: number): Promise<Oferta[]> {
@@ -395,28 +422,127 @@ export async function eliminarOferta(ofertaId: number) {
   return res.json();
 }
 
-// ==========================================
-//        PROCESAMIENTO Y VALIDACIÓN
-// ==========================================
+// =========================================================
+//    NUEVOS ENDPOINTS: PROCESAMIENTO Y VALIDACIÓN
+// =========================================================
 
-export interface RespuestaFormulario {
-  id: number;
-  codigoEstudiante: string;
-  correoEstudiante: string;
-  nombreEstudiante: string;
-  apellidosEstudiante: string;
-  programaNombre: string;
-  periodoSemestre: string;
-  timestampRespuesta: string;
-  estado: string;
-  electivasSeleccionadas: {
-    opcionNum: number;
-    nombreElectiva: string;
-  }[];
-}
+// --- ValidacionRespuestasFormsController ---
 
 export async function fetchRespuestasFormulario(periodoId: number): Promise<RespuestaFormulario[]> {
   const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/respuestas`);
   if (!res.ok) throw new Error("Error al obtener respuestas del formulario");
   return res.json();
+}
+
+export async function aplicarFiltroDuplicados(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+  const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/filtro-duplicados`, { method: "POST" });
+  if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+  return res.json();
+}
+
+export async function aplicarFiltroAntiguedad(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+  const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/filtro-antiguedad`, { method: "POST" });
+  if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+  return res.json();
+}
+
+export async function revisarManualFormatoInvalido(respuestaId: number, incluir: boolean, nuevoCodigo: string) {
+  const res = await fetch(`${API_URL}/api/procesamiento/respuestas/${respuestaId}/revision-manual?incluir=${incluir}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ nuevoCodigo: nuevoCodigo || "0" }) 
+  });
+  if (!res.ok) throw new Error("Error en revisión manual");
+  return res.json();
+}
+
+export async function confirmarListaParaSimca(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+  const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/confirmar-simca`, { method: "POST" });
+  if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+  return res.json();
+}
+
+// --- ValidacionAcademicaController ---
+
+export async function cargarDatosSimca(periodoId: number, files: File[]): Promise<SimcaCargaResponse> {
+  const formData = new FormData();
+  files.forEach(file => formData.append("archivos", file));
+
+  const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/cargar-simca`, {
+    method: "POST",
+    body: formData
+  });
+  if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+  return res.json();
+}
+
+export async function fetchDatosAcademicos(periodoId: number, estados?: string[]): Promise<DatosAcademicoResponse[]> {
+  const params = new URLSearchParams();
+  if (estados && estados.length > 0) {
+      estados.forEach(e => params.append("estados", e));
+  }
+  const res = await fetch(`${API_URL}/api/validacion-academica/periodo/${periodoId}/datos-academicos?${params.toString()}`);
+  if (!res.ok) throw new Error("Error al obtener datos académicos");
+  return res.json();
+}
+
+export async function listarInconsistencias(periodoId: number): Promise<RespuestaFormulario[]> {
+  const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/inconsistencias`);
+  if (!res.ok) throw new Error("Error al listar inconsistencias");
+  return res.json();
+}
+
+export async function resolverInconsistencia(respuestaId: number, incluir: boolean, nuevoCodigo: string) {
+    const res = await fetch(`${API_URL}/api/validacion-academica/respuestas/${respuestaId}/decision-inconsistencia?incluir=${incluir}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nuevoCodigo: nuevoCodigo || "0" })
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
+}
+
+export async function regenerarLoteCorregidos(periodoId: number) {
+  const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/regenerar-lote-corregidos`);
+  if (!res.ok) throw new Error("Error al regenerar lote");
+  return res.blob();
+}
+
+export async function calcularPorcentajeAvance(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+    const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/calcular-porcentaje-avance`, { method: "POST" });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
+}
+
+export async function validarRequisitosGenerales(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+    const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/validar-requisitos-generales`, { method: "POST" });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
+}
+
+// --- ValidacionNiveladosController ---
+
+export async function preseleccionarNivelados(periodoId: number): Promise<DatosAcademicoResponse[]> {
+    const res = await fetch(`${API_URL}/api/validacion-nivelados/periodos/${periodoId}/preseleccionar-nivelados`, { method: "POST" });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
+}
+
+export async function generarReporteNivelado(idDatosAcademicos: number, file: File): Promise<VerificacionNiveladoDTO> {
+    const formData = new FormData();
+    formData.append("archivo", file);
+    const res = await fetch(`${API_URL}/api/validacion-nivelados/reporte/${idDatosAcademicos}`, {
+        method: "POST",
+        body: formData
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
+}
+
+export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado: boolean): Promise<DatosAcademicoResponse> {
+    const res = await fetch(`${API_URL}/api/validacion-nivelados/decision-final/${idDatosAcademicos}?nivelado=${nivelado}`, {
+        method: "POST"
+    });
+    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    return res.json();
 }
