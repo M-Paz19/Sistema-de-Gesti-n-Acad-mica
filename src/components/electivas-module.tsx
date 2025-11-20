@@ -125,13 +125,15 @@ export function ElectivasModule() {
   const handleEdit = (electiva: Electiva) => {
   setEditingElectiva(electiva);
   setEditFormData({
-    nombre: electiva.nombre,
-    codigo: electiva.codigo,
-    descripcion: electiva.descripcion,
-    departamentoId: electiva.departamentoId,
-    programasIds: [...electiva.programasIds],
+    nombre: electiva.nombre ?? '',
+    codigo: electiva.codigo ?? '',
+    descripcion: electiva.descripcion ?? '',
+    departamentoId: electiva.departamentoId ?? 0,
+    programasIds: electiva.programasIds?.slice() ?? [],
   });
 };
+
+
 
   const handleSubmitEdit = async () => {
   if (!editFormData || !editingElectiva) return;
@@ -149,8 +151,8 @@ export function ElectivasModule() {
 
     // Normaliza para incluir programasIds
     const normalized = {
-      ...updated,
-      programasIds: updated.programas ? updated.programas.map((p: any) => p.id) : [],
+  ...updated,
+  programasIds: updated.programas?.map((p: any) => p.id) ?? [],
     };
 
     setElectivas(prev => prev.map(e => e.id === normalized.id ? normalized : e));
@@ -164,14 +166,17 @@ export function ElectivasModule() {
 };
 
   const handleApprove = async (electivaId: string) => {
-    try {
+  try {
       const updated = await approveElectiva(electivaId);
-      setElectivas(prev => prev.map(e => e.id === updated.id ? updated : e));
+      setElectivas(prev =>
+        prev.map(e => e.id === updated.id ? { ...updated, programasIds: updated.programas?.map(p => p.id) ?? [] } : e)
+      );
       toast.success('Electiva aprobada');
     } catch (err: any) {
       toast.error(err.message);
     }
   };
+
 
   const handleReject = (electivaId: string) => {
     setElectivas(prev => prev.map(e => 
@@ -517,7 +522,7 @@ export function ElectivasModule() {
                     </DialogContent>
                   </Dialog>
 
-                  {electiva.estado === 'PENDIENTE' && (
+                  {electiva.estado === 'BORRADOR' && (  //aqui hice el cambio, iba PENDIENTE
                     <>
                       <AlertDialog>
                         <AlertDialogTrigger asChild>
@@ -535,7 +540,10 @@ export function ElectivasModule() {
                           </AlertDialogHeader>
                           <AlertDialogFooter>
                             <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleApprove(electiva.id)}>
+                            <AlertDialogAction  onClick={async () => {
+                                await handleApprove(electiva.id);
+                                setShowApproveDialog(false); 
+                              }}>
                               Aprobar
                             </AlertDialogAction>
                           </AlertDialogFooter>

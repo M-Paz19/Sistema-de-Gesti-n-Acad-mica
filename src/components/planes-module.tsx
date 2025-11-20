@@ -13,7 +13,16 @@ import { Alert, AlertDescription } from './ui/alert';
 import { Textarea } from './ui/textarea';
 import { toast } from 'sonner';
 import { useEffect } from "react";
-import { fetchProgramas, listarPlanes, crearPlan, cargarMalla, modificarPlan } from "../services/api";
+import { 
+  fetchProgramas, 
+  listarPlanes, 
+  listarTodosLosPlanes,
+  crearPlan, 
+  cargarMalla, 
+  modificarPlan,
+  obtenerMalla
+} from "../services/api";
+
 
 export function PlanesModule() {
   const [planes, setPlanes] = useState<Plan[]>([]);
@@ -28,16 +37,33 @@ export function PlanesModule() {
   const [reglasNivelacion, setReglasNivelacion] = useState('');
   const [programas, setProgramas] = useState<any[]>([]);
   const [selectedProgramaId, setSelectedProgramaId] = useState<number | null>(null);
+  const [materias, setMaterias] = useState<any[]>([]);
   useEffect(() => {
   (async () => {
     try {
-      const data = await fetchProgramas(); // <-- llamada real al backend
-      setProgramas(data);
+      // Cargar todos los planes al abrir la sección
+      const data = await listarTodosLosPlanes();
+      setPlanes(data.map((p: any) => ({
+        ...p,
+        año: p.anioInicio
+      })));
     } catch (err) {
-      toast.error("Error al cargar programas");
+      console.error(err);
+      toast.error("Error al cargar los planes");
     }
   })();
 }, []);
+  // Cargar la lista de programas al entrar al módulo
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await fetchProgramas();
+        setProgramas(data);
+      } catch (err) {
+        toast.error("Error al cargar los programas");
+      }
+    })();
+  }, []);
   const [formData, setFormData] = useState({
     nombre: '',
     version: '',
@@ -47,24 +73,44 @@ export function PlanesModule() {
 
   // Paso 3: Obtener los planes de un programa desde el backend
   useEffect(() => {
-    if (!selectedProgramaId) {
-      setPlanes([]);  // Si no se ha seleccionado un programa, vaciamos los planes
-      return;
+  if (!selectedProgramaId) return;
+
+  (async () => {
+    try {
+      const data = await listarPlanes(selectedProgramaId);
+      const normalizedData = data.map((plan: any) => ({
+      id: plan.id,
+      nombre: plan.nombre,
+      version: plan.version,
+      estado: plan.estado,
+      programaId: plan.programaId,
+      año: plan.anioInicio,
+      totalCreditos: plan.creditosTotalesPlan ?? 0,
+      materiasCount: plan.materias?.length ?? 0,   // si tu backend no devuelve materias → queda en 0
+      electivasRequeridas: plan.electivasRequeridas ?? 0,
+      creditosTrabajoGrado: plan.creditosTrabajoGrado ?? 0,
+
+      // Si quieres indicar si requiere malla
+      mallaCargar: plan.estado === "CONFIGURACION_PENDIENTE",
+
+
+      // Reglas
+      reglasNivelacion: plan.reglasNivelacion ?? {},
+
+      // Electivas por semestre
+      electivasPorSemestre: plan.electivasPorSemestre ?? {},
+
+      // Si backend no envía fechaCreacion, lo agregamos opcional
+      fechaCreacion: plan.fechaCreacion ?? "N/A",
+    }));
+
+      setPlanes(normalizedData);
+    } catch (err: any) {
+      toast.error('Error al listar planes');
     }
-    (async () => {
-      try {
-        const data = await listarPlanes(selectedProgramaId);  // Llamada al backend para obtener los planes
-        const normalizedData = data.map((plan: any) => ({
-          ...plan,
-          año: plan.anioInicio ?? plan.año ?? undefined,
-          id: plan.id,
-        }));
-        setPlanes(normalizedData);  // Actualizamos el estado de los planes
-      } catch (err: any) {
-        toast.error('Error al listar planes');
-      }
-    })();
+  })();
   }, [selectedProgramaId]);
+
 
 
 
@@ -79,7 +125,6 @@ export function PlanesModule() {
 
   return matchesSearch && matchesPrograma;
 });
-
 
   const getEstadoBadgeVariant = (estado: string) => {
     switch (estado) {
@@ -105,7 +150,8 @@ export function PlanesModule() {
       const payload = {
       nombre: formData.nombre,
       version: formData.version,
-      anioInicio: Number(formData.año)
+      anioInicio: Number(formData.año),
+      programaId: selectedProgramaId
     };
       const createdPlan = await crearPlan(payload);  // Llamamos a la función de la API para crear el plan
       const nuevoPlan = {
@@ -200,6 +246,16 @@ export function PlanesModule() {
       toast.error(err.message || 'Error al modificar plan');
     }
   };
+
+  async function cargarMallaDelPlan(plan: any) {
+  try {
+    const data = await obtenerMalla(plan.id); 
+    setSelectedPlan(plan);
+    setMaterias(data);
+  } catch (err) {
+    toast.error("Error al cargar la malla curricular");
+  }
+}
 
 
   return (
@@ -332,41 +388,58 @@ export function PlanesModule() {
                     <div className="space-y-2">
                       <p><span className="font-medium">Programa:</span> {programas.find(p => p.id === plan.programaId)?.nombre || "—"}</p>
                       <p><span className="font-medium">Año:</span> {plan.año}</p>
-                      <p><span className="font-medium">Créditos:</span> {plan.totalCreditos}</p>
-                      <p><span className="font-medium">Materias:</span> {plan.materiasCount}</p>
-                      <p><span className="font-medium">Creado:</span> {plan.fechaCreacion}</p>
+                      <p><span className="font-medium">Créditos totales:</span> {plan.creditosTotalesPlan}</p>
+                      <p><span className="font-medium">Electivas requeridas:</span> {plan.electivasRequeridas}</p>
+                      <p><span className="font-medium">Créditos Trabajo de Grado:</span> {plan.creditosTrabajoGrado}</p>
+                      <p><span className="font-medium">Estado:</span> {plan.estado}</p>
+
                     </div>
                     
                     <div className="flex space-x-2 mt-4">
-                      {plan.mallaCargar ? (
-                        <div className="w-full space-y-2">
-                          <Alert>
-                            <AlertDescription>
-                              Este plan necesita una malla curricular
-                            </AlertDescription>
-                          </Alert>
-                          <Button 
-                            className="w-full" 
-                            onClick={() => toast.error("Falta implementar input de archivo")}
-                            disabled={isUploadingMalla}
-                          >
-                            <Upload className="h-4 w-4 mr-2" />
-                            {isUploadingMalla ? 'Cargando...' : 'Cargar Malla Excel'}
+                    {plan.mallaCargar ? (
+                      <div className="w-full space-y-2">
+                        <Alert>
+                          <AlertDescription>
+                            Este plan necesita una malla curricular
+                          </AlertDescription>
+                        </Alert>
+
+                        {/* Input REAL */}
+                        <label className="w-full">
+                          <input
+                            type="file"
+                            accept=".xlsx,.xls"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              handleFileUpload(String(plan.id), file);
+                            }}
+                          />
+
+                          <Button className="w-full" disabled={isUploadingMalla} asChild>
+                            <span>
+                              <Upload className="h-4 w-4 mr-2" />
+                              {isUploadingMalla ? "Cargando..." : "Cargar Malla Excel"}
+                            </span>
                           </Button>
-                          {isUploadingMalla && (
-                            <div className="space-y-1">
-                              <Progress value={uploadProgress} className="w-full" />
-                              <p className="text-sm text-muted-foreground text-center">
-                                {uploadProgress}% completado
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
+                        </label>
+
+                        {isUploadingMalla && (
+                          <div className="space-y-1">
+                            <Progress value={uploadProgress} className="w-full" />
+                            <p className="text-sm text-muted-foreground text-center">
+                              {uploadProgress}% completado
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+
                         <Button 
                           className="w-full" 
                           variant="outline"
-                          onClick={() => setSelectedPlan(plan)}
+                          onClick={() => cargarMallaDelPlan(plan)}
                         >
                           <Eye className="h-4 w-4 mr-2" />
                           Ver Malla
@@ -403,7 +476,10 @@ export function PlanesModule() {
               </div>
               <div className="text-right">
                 <p className="text-sm text-muted-foreground">Total de créditos</p>
-                <p className="text-2xl font-bold">{selectedPlan.totalCreditos}</p>
+                <p className="text-2xl font-bold">
+                  {selectedPlan.totalCreditos ?? selectedPlan.creditosTotalesPlan}
+                </p>
+
               </div>
             </div>
 
@@ -414,11 +490,12 @@ export function PlanesModule() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-2xl font-bold">
-                    {0}
+                    {materias.filter(m => m.tipo === "OBLIGATORIA").length}
                   </div>
                   <p className="text-sm text-muted-foreground">materias</p>
                 </CardContent>
               </Card>
+
               
               <Card>
               <CardHeader className="pb-3">
@@ -426,7 +503,7 @@ export function PlanesModule() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {0}
+                  {materias.filter(m => m.tipo === "ELECTIVA").length}
                 </div>
                 <p className="text-sm text-muted-foreground">materias</p>
               </CardContent>
@@ -438,7 +515,7 @@ export function PlanesModule() {
               </CardHeader>
               <CardContent>
                 <div className="text-2xl font-bold">
-                  {0}
+                  {materias.filter(m => m.tipo === "TRABAJO_GRADO").length}
                 </div>
                 <p className="text-sm text-muted-foreground">materias</p>
               </CardContent>
@@ -463,7 +540,16 @@ export function PlanesModule() {
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {[].map(() => null)}
+                    {materias.map(mat => (
+                      <TableRow key={mat.id}>
+                        <TableCell>{mat.id}</TableCell>
+                        <TableCell>{mat.nombre}</TableCell>
+                        <TableCell>{mat.creditos}</TableCell>
+                        <TableCell>{mat.semestre}</TableCell>
+                        <TableCell>{mat.tipo}</TableCell>
+                        <TableCell>—</TableCell> {/* No tenemos prerrequisitos */}
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </CardContent>

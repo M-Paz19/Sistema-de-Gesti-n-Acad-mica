@@ -309,6 +309,20 @@ export async function cargarMalla(programaId: number, planId: number, file: File
   return response.json();
 }
 
+// 5. Listar todos los planes (sin importar el programa)
+export async function listarTodosLosPlanes() {
+  const response = await fetch(`${API_URL}/api/planes`);
+  if (!response.ok) throw new Error('Error al listar todos los planes');
+  return response.json();
+}
+
+export async function obtenerMalla(planId: number) {
+  const res = await fetch(`${API_URL}/api/planes/${planId}`);
+  if (!res.ok) throw new Error("Error al obtener malla curricular");
+  return res.json();
+}
+
+
 // ==========================================
 //             PERIODOS ACADÉMICOS
 // ==========================================
