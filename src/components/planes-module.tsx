@@ -23,7 +23,6 @@ import {
   obtenerMalla
 } from "../services/api";
 
-
 export function PlanesModule() {
   const [planes, setPlanes] = useState<Plan[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
@@ -38,14 +37,39 @@ export function PlanesModule() {
   const [programas, setProgramas] = useState<any[]>([]);
   const [selectedProgramaId, setSelectedProgramaId] = useState<number | null>(null);
   const [materias, setMaterias] = useState<any[]>([]);
+  const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
+  const [selectedPlanForConfig, setSelectedPlanForConfig] = useState<Plan | null>(null);
+  const [excelFile, setExcelFile] = useState<File | null>(null);
+  const [configForm, setConfigForm] = useState({
+    electivasPorSemestreJson: {},
+    reglasNivelacionJson: {},
+    electivasRequeridas: 0,
+    creditosTotalesPlan: 0,
+    creditosTrabajoGrado: 0,
+  });
   useEffect(() => {
   (async () => {
     try {
-      // Cargar todos los planes al abrir la sección
-      const data = await listarTodosLosPlanes();
-      setPlanes(data.map((p: any) => ({
-        ...p,
-        año: p.anioInicio
+      const data = await listarTodosLosPlanes();  // <-- Faltaba esto
+
+      setPlanes(data.map((plan: any) => ({
+        id: plan.id,
+        nombre: plan.nombre,
+        version: plan.version,
+        estado: plan.estado,
+        programaId: plan.programaId,
+        año: plan.anioInicio,
+        totalCreditos: plan.creditosTotalesPlan ?? 0,
+        materiasCount: plan.materias?.length ?? 0,
+        electivasRequeridas: plan.electivasRequeridas ?? 0,
+        creditosTrabajoGrado: plan.creditosTrabajoGrado ?? 0,
+
+        // IMPORTANTE: que aparezca el botón
+        mallaCargar: plan.estado === "CONFIGURACION_PENDIENTE",
+
+        reglasNivelacion: plan.reglasNivelacion ?? {},
+        electivasPorSemestre: plan.electivasPorSemestre ?? {},
+        fechaCreacion: plan.fechaCreacion ?? "N/A",
       })));
     } catch (err) {
       console.error(err);
@@ -53,6 +77,7 @@ export function PlanesModule() {
     }
   })();
 }, []);
+
   // Cargar la lista de programas al entrar al módulo
   useEffect(() => {
     (async () => {
@@ -226,10 +251,6 @@ export function PlanesModule() {
     setCurrentPlanForReglas(null);
   };
 
-  const generateTemplate = () => {
-    // En una implementación real, esto generaría y descargaría un archivo Excel
-    toast.success('Plantilla de Excel descargada');
-  };
 
   // Paso 5: Modificar un plan
   const handleModificarPlan = async (planId: string, data: { nombre?: string; version?: string; año?: number }) => {
@@ -267,10 +288,6 @@ export function PlanesModule() {
             <p className="text-muted-foreground">Administra los planes académicos y mallas curriculares</p>
           </div>
           <div className="flex space-x-2">
-            <Button variant="outline" onClick={generateTemplate}>
-              <Download className="h-4 w-4 mr-2" />
-              Plantilla Excel
-            </Button>
             <Dialog open={isCreating} onOpenChange={setIsCreating}>
               <DialogTrigger asChild>
                 <Button>
@@ -397,43 +414,34 @@ export function PlanesModule() {
                     
                     <div className="flex space-x-2 mt-4">
                     {plan.mallaCargar ? (
-                      <div className="w-full space-y-2">
-                        <Alert>
-                          <AlertDescription>
-                            Este plan necesita una malla curricular
-                          </AlertDescription>
-                        </Alert>
+                    <div className="w-full space-y-2">
+                      <Alert>
+                        <AlertDescription>
+                          Este plan necesita una malla curricular
+                        </AlertDescription>
+                      </Alert>
 
-                        {/* Input REAL */}
-                        <label className="w-full">
-                          <input
-                            type="file"
-                            accept=".xlsx,.xls"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files?.[0];
-                              if (!file) return;
-                              handleFileUpload(String(plan.id), file);
-                            }}
-                          />
+                      <Button 
+                        className="w-full"
+                        onClick={() => {
+                          setSelectedPlanForConfig(plan);
+                          setIsConfigModalOpen(true);
+                        }}
+                      >
+                        <Upload className="h-4 w-4 mr-2" />
+                        Configurar y Cargar Malla
+                      </Button>
 
-                          <Button className="w-full" disabled={isUploadingMalla} asChild>
-                            <span>
-                              <Upload className="h-4 w-4 mr-2" />
-                              {isUploadingMalla ? "Cargando..." : "Cargar Malla Excel"}
-                            </span>
-                          </Button>
-                        </label>
+                      {isUploadingMalla && (
+                        <div className="space-y-1">
+                          <Progress value={uploadProgress} className="w-full" />
+                          <p className="text-sm text-muted-foreground text-center">
+                            {uploadProgress}% completado
+                          </p>
+                        </div>
+                      )}
+                    </div>
 
-                        {isUploadingMalla && (
-                          <div className="space-y-1">
-                            <Progress value={uploadProgress} className="w-full" />
-                            <p className="text-sm text-muted-foreground text-center">
-                              {uploadProgress}% completado
-                            </p>
-                          </div>
-                        )}
-                      </div>
                     ) : (
 
                         <Button 
@@ -597,6 +605,150 @@ export function PlanesModule() {
           </div>
         </DialogContent>
       </Dialog>
+
+      <Dialog open={isConfigModalOpen} onOpenChange={setIsConfigModalOpen}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Configurar Malla Curricular</DialogTitle>
+        </DialogHeader>
+
+        {/* FORMULARIO */}
+        <div className="space-y-6">
+
+          {/* ELECTIVAS POR SEMESTRE */}
+          <div>
+            <Label>Electivas por semestre</Label>
+            <Textarea
+              placeholder={`Ejemplo:\n{\n  "8": 2,\n  "9": 2,\n  "10": 1\n}`}
+              onChange={(e) => {
+                try {
+                  setConfigForm(prev => ({
+                    ...prev,
+                    electivasPorSemestreJson: JSON.parse(e.target.value)
+                  }));
+                } catch (_) {}
+              }}
+            />
+          </div>
+
+          {/* REGLAS DE NIVELACIÓN */}
+          <div>
+            <Label>Reglas de nivelación</Label>
+            <Textarea
+              placeholder={`Ejemplo:\n{\n  "Octavo": { "minCreditosAprobados":112, "maxPeriodosMatriculados":7 }\n}`}
+              onChange={(e) => {
+                try {
+                  setConfigForm(prev => ({
+                    ...prev,
+                    reglasNivelacionJson: JSON.parse(e.target.value)
+                  }));
+                } catch (_) {}
+              }}
+            />
+          </div>
+
+          {/* CAMPOS NUMÉRICOS */}
+          <div className="grid grid-cols-3 gap-4">
+            <div>
+              <Label>Electivas requeridas</Label>
+              <Input 
+                type="number"
+                onChange={(e) =>
+                  setConfigForm(prev => ({ 
+                    ...prev, 
+                    electivasRequeridas: Number(e.target.value) 
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <Label>Créditos totales</Label>
+              <Input 
+                type="number"
+                onChange={(e) =>
+                  setConfigForm(prev => ({ 
+                    ...prev, 
+                    creditosTotalesPlan: Number(e.target.value) 
+                  }))
+                }
+              />
+            </div>
+
+            <div>
+              <Label>Créditos Trabajo de Grado</Label>
+              <Input 
+                type="number"
+                onChange={(e) =>
+                  setConfigForm(prev => ({ 
+                    ...prev, 
+                    creditosTrabajoGrado: Number(e.target.value) 
+                  }))
+                }
+              />
+            </div>
+          </div>
+
+          {/* SUBIR ARCHIVO */}
+          <div>
+            <Label>Archivo de malla (.xls / .xlsx)</Label>
+            <Input 
+              type="file" 
+              accept=".xlsx,.xls" 
+              onChange={(e) => setExcelFile(e.target.files?.[0] ?? null)}
+            />
+          </div>
+
+        </div>
+
+        {/* BOTONES */}
+        <div className="flex justify-end space-x-2 mt-6">
+          <Button variant="outline" onClick={() => setIsConfigModalOpen(false)}>
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={async () => {
+              if (!selectedPlanForConfig || !excelFile) {
+                toast.error("Faltan datos");
+                return;
+              }
+
+              try {
+                await cargarMalla(
+                  selectedPlanForConfig.programaId,
+                  selectedPlanForConfig.id,
+                  excelFile,
+                  configForm
+                );
+
+                toast.success("Malla cargada y plan activado");
+
+                setIsConfigModalOpen(false);
+                setExcelFile(null);
+                setConfigForm({
+                  electivasPorSemestreJson: {},
+                  reglasNivelacionJson: {},
+                  electivasRequeridas: 0,
+                  creditosTotalesPlan: 0,
+                  creditosTrabajoGrado: 0,
+                });
+
+                // Refrescar planes
+                const updated = await listarTodosLosPlanes();
+                setPlanes(updated);
+
+              } catch (err: any) {
+                toast.error(err.message ?? "Error al subir malla");
+              }
+            }}
+          >
+            Guardar y Activar Plan
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    
     </div>
   );
 }

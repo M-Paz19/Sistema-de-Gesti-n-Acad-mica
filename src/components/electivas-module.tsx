@@ -159,6 +159,9 @@ export function ElectivasModule() {
     setEditingElectiva(null);
     setEditFormData(null);
     toast.success('Electiva actualizada');
+    setFiltroEstado("TODOS");
+    setSearchTerm("");
+
 
   } catch (err: any) {
     toast.error(err.message || 'Error al actualizar electiva');
@@ -172,6 +175,8 @@ export function ElectivasModule() {
         prev.map(e => e.id === updated.id ? { ...updated, programasIds: updated.programas?.map(p => p.id) ?? [] } : e)
       );
       toast.success('Electiva aprobada');
+      setFiltroEstado("TODOS");
+      setSearchTerm("");
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -192,6 +197,9 @@ export function ElectivasModule() {
     const updated = await deactivateElectiva(electivaId);
     setElectivas(prev => prev.map(e => e.id === updated.id ? updated : e));
     toast.success('Electiva desactivada');
+    setFiltroEstado("TODOS");
+    setSearchTerm("");
+
   } catch (err: any) {
     toast.error(err.message);
   }
@@ -202,6 +210,8 @@ export function ElectivasModule() {
       const updated = await reactivateElectiva(electivaId);
       setElectivas(prev => prev.map(e => e.id === updated.id ? updated : e));
       toast.success('Electiva reactivada');
+      setFiltroEstado("TODOS");
+      setSearchTerm("");
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -343,7 +353,7 @@ export function ElectivasModule() {
         </div>
       </div>
 
-      <div className="p-6 space-y-4">
+      <div className="flex-1 p-6 space-y-4 overflow-y-auto">
         <div className="flex space-x-4 items-center">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />

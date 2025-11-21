@@ -132,7 +132,7 @@ export function ProgramasModule() {
 
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full overflow-y-auto">
       {/* Header y Crear Programa */}
       <div className="p-6 border-b bg-gradient-to-r from-[#003366]/5 to-[#FDB913]/5 flex items-center justify-between">
         <div>
@@ -179,7 +179,7 @@ export function ProgramasModule() {
       </div>
 
       {/* Filtros y búsqueda */}
-      <div className="p-6 space-y-4">
+      <div className="p-6 space-y-4 overflow-y-auto flex-1">
         <div className="flex space-x-4">
           <div className="relative flex-1">
             <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
