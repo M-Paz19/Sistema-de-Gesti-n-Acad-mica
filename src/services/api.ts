@@ -37,9 +37,10 @@ export interface Periodo {
   semestre: string;
   fechaApertura: string;
   fechaCierre: string;
-  estado: string; 
+  estado: string;
   numeroOpcionesFormulario?: number;
   urlFormulario?: string;
+  opcionesPorPrograma?: Record<string, number>;
 }
 
 export interface Oferta {
@@ -52,6 +53,25 @@ export interface Oferta {
   estado: 'OFERTADA' | 'EN_CURSO' | 'CERRADA';
   cuposPorPrograma: Record<string, number>;
 }
+
+export interface PlanEstudio {
+    id: number;
+    nombre: string;
+    version: string;
+    estado: string;
+    anioInicio: number;
+    programaId: number;
+    creditosTotalesPlan?: number;
+    materiasCount?: number;
+    electivasRequeridas?: number;
+    creditosTrabajoGrado?: number;
+    mallaCargar?: boolean;
+    reglasNivelacion?: any;
+    electivasPorSemestre?: any;
+    fechaCreacion?: string;
+}
+
+// --- Interfaces de Procesamiento ---
 
 export interface RespuestaFormulario {
   id: number;
@@ -67,6 +87,15 @@ export interface RespuestaFormulario {
     opcionNum: number;
     nombreElectiva: string;
   }[];
+}
+
+export interface RespuestaFormularioDesicionResponse {
+  id: number;
+  codigoEstudiante: string;
+  correoEstudiante: string;
+  nombreCompleto: string;
+  estado: string;
+  mensaje: string;
 }
 
 export interface CambioEstadoValidacionResponse {
@@ -108,19 +137,19 @@ export interface DatosAcademicoResponse {
 }
 
 export interface VerificacionNiveladoDTO {
-    codigoEstudiante: string;
+  codigoEstudiante: string;
+  nombre: string;
+  programa: string;
+  nivelado: boolean;
+  semestreVerificado: number;
+  mensajeResumen: string;
+  comparacionMaterias: {
     nombre: string;
-    programa: string;
-    nivelado: boolean;
-    semestreVerificado: number;
-    mensajeResumen: string;
-    comparacionMaterias: {
-        nombre: string;
-        semestre: number;
-        obligatoria: boolean;
-        aprobada: boolean;
-        observacion: string;
-    }[];
+    semestre: number;
+    obligatoria: boolean;
+    aprobada: boolean;
+    observacion: string;
+  }[];
 }
 
 // ==========================================
@@ -133,7 +162,7 @@ export async function fetchDepartamentos(): Promise<Departamento[]> {
   return res.json();
 }
 
-export async function createDepartamento(departamento: Omit<Departamento, "id" | "fechaCreacion">) {
+export async function createDepartamento(departamento: any) {
   const res = await fetch(`${API_URL}/api/departamentos`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -146,7 +175,7 @@ export async function createDepartamento(departamento: Omit<Departamento, "id" |
   return res.json();
 }
 
-export async function updateDepartamento(id: string, departamento: Partial<Departamento>) {
+export async function updateDepartamento(id: string, departamento: any) {
   const res = await fetch(`${API_URL}/api/departamentos/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -169,7 +198,7 @@ export async function fetchProgramas(): Promise<Programa[]> {
   return res.json();
 }
 
-export async function createPrograma(programa: Omit<Programa, "id" | "estado" | "fechaCreacion">): Promise<Programa> {
+export async function createPrograma(programa: any): Promise<Programa> {
   const res = await fetch(`${API_URL}/api/programas`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -179,7 +208,7 @@ export async function createPrograma(programa: Omit<Programa, "id" | "estado" | 
   return res.json();
 }
 
-export async function updatePrograma(id: string, programa: Partial<Programa>): Promise<Programa> {
+export async function updatePrograma(id: string, programa: any): Promise<Programa> {
   const res = await fetch(`${API_URL}/api/programas/${id}`, {
     method: "PUT",
     headers: { "Content-Type": "application/json" },
@@ -309,19 +338,34 @@ export async function cargarMalla(programaId: number, planId: number, file: File
   return response.json();
 }
 
-// 5. Listar todos los planes (sin importar el programa)
-export async function listarTodosLosPlanes() {
-  const response = await fetch(`${API_URL}/api/planes`);
-  if (!response.ok) throw new Error('Error al listar todos los planes');
-  return response.json();
+export async function listarTodosLosPlanes(): Promise<PlanEstudio[]> {
+    try {
+        const programas = await fetchProgramas();
+        let todosLosPlanes: PlanEstudio[] = [];
+        
+        for (const prog of programas) {
+            try {
+                const planes = await listarPlanes(parseInt(prog.id));
+                const planesConPrograma = planes.map((p: any) => ({
+                   ...p, 
+                   programaId: parseInt(prog.id)
+                }));
+                todosLosPlanes = [...todosLosPlanes, ...planesConPrograma];
+            } catch (e) {
+                console.warn(`No se pudieron cargar planes para programa ${prog.id}`, e);
+            }
+        }
+        return todosLosPlanes;
+    } catch (error) {
+        console.error("Error al listar todos los planes", error);
+        return [];
+    }
 }
 
 export async function obtenerMalla(planId: number) {
-  const res = await fetch(`${API_URL}/api/planes/${planId}`);
-  if (!res.ok) throw new Error("Error al obtener malla curricular");
-  return res.json();
+    console.warn("Endpoint obtenerMalla no implementado en backend. Retornando array vacío.");
+    return []; 
 }
-
 
 // ==========================================
 //             PERIODOS ACADÉMICOS
@@ -349,12 +393,13 @@ export async function createPeriodo(data: { semestre: string; fechaApertura: str
   return res.json();
 }
 
-export async function abrirPeriodo(id: number, numeroOpciones: number, forzar: boolean = false) {
+export async function abrirPeriodo(id: number, opcionesPorPrograma: Record<string, number>, forzar: boolean = false) {
   const res = await fetch(`${API_URL}/api/periodos-academicos/${id}/abrir`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
-      numeroOpcionesFormulario: numeroOpciones,
+      opcionesPorPrograma: opcionesPorPrograma,
+      numeroOpcionesFormulario: 1, // Dummy por compatibilidad si requerido
       forzarApertura: forzar
     }),
   });
@@ -388,10 +433,20 @@ export async function cargarRespuestasManual(id: number, file: File) {
   return res.json();
 }
 
+export async function cerrarPeriodoAcademico(id: number) {
+    const res = await fetch(`${API_URL}/api/periodos-academicos/${id}/cerrar-periodo`, { method: "POST" });
+    if (!res.ok) {
+      const error = await res.json();
+      throw new Error(error.message || "Error al cerrar el periodo");
+    }
+    return res.json();
+}
+
 // ==========================================
 //             OFERTA ACADÉMICA
 // ==========================================
 
+// ESTA ES LA FUNCIÓN QUE FALTABA EN TU VERSIÓN ANTERIOR
 export async function fetchOfertasPorPeriodo(periodoId: number): Promise<Oferta[]> {
   const res = await fetch(`${API_URL}/api/periodos/${periodoId}/ofertas`);
   if (!res.ok) throw new Error("Error al obtener ofertas");
@@ -437,10 +492,8 @@ export async function eliminarOferta(ofertaId: number) {
 }
 
 // =========================================================
-//    NUEVOS ENDPOINTS: PROCESAMIENTO Y VALIDACIÓN
+//    PROCESAMIENTO Y VALIDACIÓN
 // =========================================================
-
-// --- ValidacionRespuestasFormsController ---
 
 export async function fetchRespuestasFormulario(periodoId: number): Promise<RespuestaFormulario[]> {
   const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/respuestas`);
@@ -460,13 +513,17 @@ export async function aplicarFiltroAntiguedad(periodoId: number): Promise<Cambio
   return res.json();
 }
 
-export async function revisarManualFormatoInvalido(respuestaId: number, incluir: boolean, nuevoCodigo: string) {
+export async function revisarManualFormatoInvalido(respuestaId: number, incluir: boolean, nuevoCodigo: string): Promise<RespuestaFormularioDesicionResponse> {
   const res = await fetch(`${API_URL}/api/procesamiento/respuestas/${respuestaId}/revision-manual?incluir=${incluir}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ nuevoCodigo: nuevoCodigo || "0" }) 
   });
-  if (!res.ok) throw new Error("Error en revisión manual");
+  
+  if (!res.ok) {
+      const errorData = await res.json().catch(() => ({}));
+      throw new Error(errorData.message || "Error en revisión manual");
+  }
   return res.json();
 }
 
@@ -516,10 +573,17 @@ export async function resolverInconsistencia(respuestaId: number, incluir: boole
     return res.json();
 }
 
-export async function regenerarLoteCorregidos(periodoId: number) {
-  const res = await fetch(`${API_URL}/api/validacion-academica/periodos/${periodoId}/regenerar-lote-corregidos`);
-  if (!res.ok) throw new Error("Error al regenerar lote");
+export async function descargarLotesSimca(periodoId: number) {
+  const res = await fetch(`${API_URL}/api/archivos/descargar/lotes/${periodoId}`);
+  if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.message || "Error al descargar lotes");
+  }
   return res.blob();
+}
+
+export async function regenerarLoteCorregidos(periodoId: number) {
+  return descargarLotesSimca(periodoId);
 }
 
 export async function calcularPorcentajeAvance(periodoId: number): Promise<CambioEstadoValidacionResponse> {

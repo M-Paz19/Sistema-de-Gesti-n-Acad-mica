@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '.
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { Alert, AlertDescription } from './ui/alert';
 import { ScrollArea } from './ui/scroll-area';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 
 // Importamos los servicios y tipos
 import { 
@@ -42,7 +42,8 @@ export function PeriodosModule() {
   const [editingOferta, setEditingOferta] = useState<Oferta | null>(null);
 
   const [isOpeningPeriod, setIsOpeningPeriod] = useState(false);
-  const [opcionesFormulario, setOpcionesFormulario] = useState(2);
+  // Cambio: ahora usamos un mapa para opciones por programa
+  const [opcionesPorPrograma, setOpcionesPorPrograma] = useState<Record<string, number>>({});
 
   const [formData, setFormData] = useState({
     año: new Date().getFullYear(),
@@ -115,10 +116,30 @@ export function PeriodosModule() {
     }
   };
 
+  // Prepara el estado de opciones por programa con valores por defecto (ej. 2)
+  const handleInitOpenPeriodo = () => {
+    const aprobados = programas.filter(p => p.estado === 'APROBADO');
+    const initialOpciones: Record<string, number> = {};
+    aprobados.forEach(p => {
+      initialOpciones[p.id] = 2;
+    });
+    setOpcionesPorPrograma(initialOpciones);
+    setIsOpeningPeriod(true);
+  };
+
   const handleOpenPeriodo = async () => {
     if (!selectedPeriodo) return;
+    
+    // Validar que todas tengan al menos 1
+    const invalidos = Object.values(opcionesPorPrograma).some(v => v < 1);
+    if(invalidos) {
+      toast.error("Todos los programas deben tener al menos 1 opción.");
+      return;
+    }
+
     try {
-      const res = await abrirPeriodo(selectedPeriodo.id, opcionesFormulario, true); 
+      // Llamada a la API con el mapa de opciones
+      const res = await abrirPeriodo(selectedPeriodo.id, opcionesPorPrograma, true); 
       toast.success(res.mensaje);
       setSelectedPeriodo(prev => prev ? { ...prev, estado: 'ABIERTO_FORMULARIO', urlFormulario: res.urlFormulario } : null);
       loadPeriodos(); 
@@ -136,7 +157,15 @@ export function PeriodosModule() {
       setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
       loadPeriodos();
     } catch (err: any) {
-      toast.error(err.message);
+      // Manejo específico para cuando falla la carga automática de Google Forms (409)
+      if (err.message?.includes("cargar manualmente") || err.message?.includes("No fue posible obtener respuestas")) {
+          toast.warning("No se pudieron obtener respuestas automáticas. El periodo se cerró, por favor realice la carga manual.");
+          // Actualizamos el estado localmente porque el backend SÍ cerró el periodo aunque falló la carga
+          setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
+          loadPeriodos();
+      } else {
+          toast.error(err.message || "Error al cerrar formulario");
+      }
     }
   };
 
@@ -332,19 +361,41 @@ export function PeriodosModule() {
                 {selectedPeriodo.estado === 'CONFIGURACION' && (
                    <Dialog open={isOpeningPeriod} onOpenChange={setIsOpeningPeriod}>
                      <DialogTrigger asChild>
-                       <Button className="bg-green-600 hover:bg-green-700">
+                       <Button 
+                          className="bg-green-600 hover:bg-green-700"
+                          onClick={handleInitOpenPeriodo} // Cargar programas al abrir
+                       >
                          <PlayCircle className="mr-2 h-4 w-4"/> Abrir Periodo
                        </Button>
                      </DialogTrigger>
-                     <DialogContent>
+                     <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
                        <DialogHeader><DialogTitle>Abrir Periodo Académico</DialogTitle></DialogHeader>
                        <div className="space-y-4">
-                         <Alert><AlertDescription>Esto generará el formulario de Google y habilitará la inscripción.</AlertDescription></Alert>
-                         <div>
-                           <Label>Opciones en el formulario</Label>
-                           <Input type="number" min={1} value={opcionesFormulario} onChange={e => setOpcionesFormulario(parseInt(e.target.value))} />
+                         <Alert><AlertDescription>Defina el número de opciones que verá cada estudiante en el formulario según su programa.</AlertDescription></Alert>
+                         
+                         {/* Iterar sobre programas APROBADOS */}
+                         <div className="space-y-3">
+                           {programas.filter(p => p.estado === 'APROBADO').map(prog => (
+                              <div key={prog.id} className="flex justify-between items-center">
+                                  <Label className="w-2/3">{prog.nombre}</Label>
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-muted-foreground">Opciones:</span>
+                                    <Input 
+                                      type="number" 
+                                      min={1}
+                                      className="w-16"
+                                      value={opcionesPorPrograma[prog.id] || 2}
+                                      onChange={e => setOpcionesPorPrograma({
+                                          ...opcionesPorPrograma, 
+                                          [prog.id]: parseInt(e.target.value) || 1
+                                      })}
+                                    />
+                                  </div>
+                              </div>
+                           ))}
                          </div>
-                         <Button onClick={handleOpenPeriodo} className="w-full">Confirmar Apertura</Button>
+
+                         <Button onClick={handleOpenPeriodo} className="w-full">Confirmar y Generar Formulario</Button>
                        </div>
                      </DialogContent>
                    </Dialog>
