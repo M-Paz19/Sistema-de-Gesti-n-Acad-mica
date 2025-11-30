@@ -1,8 +1,42 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
-// ==========================================
-//             INTERFACES
-// ==========================================
+// ... (Interfaces anteriores se mantienen) ...
+
+// Nuevas Interfaces para Nivelación
+export interface MateriaComparadaDTO {
+  nombre: string;
+  semestre: number;
+  obligatoria: boolean;
+  aprobada: boolean;
+  observacion: string;
+}
+
+export interface VerificacionNiveladoDTO {
+  codigoEstudiante: string;
+  nombre: string;
+  programa: string;
+  nivelado: boolean;
+  semestreVerificado: number;
+  mensajeResumen: string;
+  comparacionMaterias: MateriaComparadaDTO[];
+}
+
+export interface DatosAcademicoResponse {
+  id: number;
+  codigoEstudiante: string;
+  apellidos: string;
+  nombres: string;
+  programa: string;
+  creditosAprobados: number;
+  periodosMatriculados: number;
+  promedioCarrera: number;
+  aprobadas: number;
+  esNivelado: boolean;
+  porcentajeAvance: number;
+  estadoAptitud: string; // PENDIENTE_VALIDACION, POSIBLE_NIVELADO, etc.
+}
+
+// ... (Interfaces y funciones existentes: Departamento, Programa, Electiva, Periodo, Oferta, etc.) ...
 
 export interface Departamento {
   id: string;
@@ -71,8 +105,6 @@ export interface PlanEstudio {
     fechaCreacion?: string;
 }
 
-// --- Interfaces de Procesamiento ---
-
 export interface RespuestaFormulario {
   id: number;
   codigoEstudiante: string;
@@ -121,37 +153,8 @@ export interface SimcaCargaResponse {
   detalleInconsistencias: InconsistenciaDto[];
 }
 
-export interface DatosAcademicoResponse {
-  id: number;
-  codigoEstudiante: string;
-  apellidos: string;
-  nombres: string;
-  programa: string;
-  creditosAprobados: number;
-  periodosMatriculados: number;
-  promedioCarrera: number;
-  aprobadas: number;
-  esNivelado: boolean;
-  porcentajeAvance: number;
-  estadoAptitud: string;
-}
-
-export interface VerificacionNiveladoDTO {
-  codigoEstudiante: string;
-  nombre: string;
-  programa: string;
-  nivelado: boolean;
-  semestreVerificado: number;
-  mensajeResumen: string;
-  comparacionMaterias: {
-    nombre: string;
-    semestre: number;
-    obligatoria: boolean;
-    aprobada: boolean;
-    observacion: string;
-  }[];
-}
-
+// ... (Funciones existentes de Departamentos, Programas, Electivas, Planes, Periodos, Ofertas) ...
+// ... (Omitidas para brevedad, asegúrate de mantenerlas) ...
 // ==========================================
 //             DEPARTAMENTOS
 // ==========================================
@@ -399,7 +402,7 @@ export async function abrirPeriodo(id: number, opcionesPorPrograma: Record<strin
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ 
       opcionesPorPrograma: opcionesPorPrograma,
-      numeroOpcionesFormulario: 1, // Dummy por compatibilidad si requerido
+      numeroOpcionesFormulario: 1, // Dummy por compatibilidad
       forzarApertura: forzar
     }),
   });
@@ -446,7 +449,6 @@ export async function cerrarPeriodoAcademico(id: number) {
 //             OFERTA ACADÉMICA
 // ==========================================
 
-// ESTA ES LA FUNCIÓN QUE FALTABA EN TU VERSIÓN ANTERIOR
 export async function fetchOfertasPorPeriodo(periodoId: number): Promise<Oferta[]> {
   const res = await fetch(`${API_URL}/api/periodos/${periodoId}/ofertas`);
   if (!res.ok) throw new Error("Error al obtener ofertas");
@@ -492,7 +494,7 @@ export async function eliminarOferta(ofertaId: number) {
 }
 
 // =========================================================
-//    PROCESAMIENTO Y VALIDACIÓN
+//    PROCESAMIENTO Y VALIDACIÓN (ValidacionRespuestas)
 // =========================================================
 
 export async function fetchRespuestasFormulario(periodoId: number): Promise<RespuestaFormulario[]> {
@@ -533,7 +535,9 @@ export async function confirmarListaParaSimca(periodoId: number): Promise<Cambio
   return res.json();
 }
 
-// --- ValidacionAcademicaController ---
+// =========================================================
+//    VALIDACIÓN ACADÉMICA (ValidacionAcademicaController)
+// =========================================================
 
 export async function cargarDatosSimca(periodoId: number, files: File[]): Promise<SimcaCargaResponse> {
   const formData = new FormData();
@@ -598,29 +602,44 @@ export async function validarRequisitosGenerales(periodoId: number): Promise<Cam
     return res.json();
 }
 
-// --- ValidacionNiveladosController ---
+// =========================================================
+//    VALIDACIÓN NIVELADOS (ValidacionNiveladosController)
+// =========================================================
 
+// 1. Preseleccionar Nivelados
 export async function preseleccionarNivelados(periodoId: number): Promise<DatosAcademicoResponse[]> {
     const res = await fetch(`${API_URL}/api/validacion-nivelados/periodos/${periodoId}/preseleccionar-nivelados`, { method: "POST" });
     if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
     return res.json();
 }
 
+// 2. Generar Reporte Visual (Subir Excel)
 export async function generarReporteNivelado(idDatosAcademicos: number, file: File): Promise<VerificacionNiveladoDTO> {
     const formData = new FormData();
     formData.append("archivo", file);
+    
     const res = await fetch(`${API_URL}/api/validacion-nivelados/reporte/${idDatosAcademicos}`, {
         method: "POST",
         body: formData
     });
-    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    
+    if (!res.ok) { 
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al generar reporte de nivelación"); 
+    }
     return res.json();
 }
 
+// 3. Registrar Decisión Final
 export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado: boolean): Promise<DatosAcademicoResponse> {
+    // OJO: El endpoint usa @RequestParam, así que usamos query params
     const res = await fetch(`${API_URL}/api/validacion-nivelados/decision-final/${idDatosAcademicos}?nivelado=${nivelado}`, {
         method: "POST"
     });
-    if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
+    
+    if (!res.ok) { 
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al registrar decisión"); 
+    }
     return res.json();
 }
