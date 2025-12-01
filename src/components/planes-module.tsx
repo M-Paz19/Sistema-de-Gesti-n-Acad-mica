@@ -46,9 +46,13 @@ export function PlanesModule() {
   const [isConfigModalOpen, setIsConfigModalOpen] = useState(false);
   const [selectedPlanForConfig, setSelectedPlanForConfig] = useState<PlanEstudio | null>(null);
   const [excelFile, setExcelFile] = useState<File | null>(null);
+  // De tu compañero
   const [materias, setMaterias] = useState<any[]>([]);
-
-  // Estado para el formulario de configuración de malla (JSONs y números)
+  // De tu rama (configuración automática)
+  const [cantidadSemestres, setCantidadSemestres] = useState<number | null>(null);
+  const [desdeSemestreElectivas, setDesdeSemestreElectivas] = useState<number | null>(null);
+  const [electivasAuto, setElectivasAuto] = useState<Record<number, number>>({});
+  const [reglasAuto, setReglasAuto] = useState<any>({});
   const [configForm, setConfigForm] = useState({
     electivasPorSemestreJson: {},
     reglasNivelacionJson: {},
@@ -126,11 +130,8 @@ export function PlanesModule() {
   };
 
   // Función para ver el detalle de un plan (malla)
-  async function cargarMallaDelPlan(plan: any) {
+    async function cargarMallaDelPlan(plan: any) {
     try {
-      // Como el backend no tiene un endpoint específico para "getMaterias(planId)",
-      // obtenerMalla en api.ts devuelve un array vacío por ahora.
-      // Si agregas ese endpoint en el futuro, esto funcionará.
       const data = await obtenerMalla(plan.id); 
       setSelectedPlan(plan);
       setMaterias(data); 
@@ -138,6 +139,25 @@ export function PlanesModule() {
       toast.error("Error al cargar la malla curricular");
     }
   }
+
+  function generarCamposAutomaticos() {
+    if (!cantidadSemestres || !desdeSemestreElectivas) return;
+
+    const electivas: Record<number, number> = {};
+    const reglas: any = {};
+
+    for (let sem = desdeSemestreElectivas; sem <= cantidadSemestres; sem++) {
+      electivas[sem] = 0;
+      reglas[sem] = {
+        minCreditosAprobados: 0,
+        maxPeriodosMatriculados: 0
+      };
+    }
+
+    setElectivasAuto(electivas);
+    setReglasAuto(reglas);
+  }
+
 
   return (
     <div className="flex flex-col h-full">
@@ -494,6 +514,230 @@ export function PlanesModule() {
           </div>
         </DialogContent>
       </Dialog>
+<<<<<<< Updated upstream
+=======
+
+      <Dialog open={isConfigModalOpen} onOpenChange={setIsConfigModalOpen}>
+      <DialogContent className="max-w-3xl">
+        <DialogHeader>
+          <DialogTitle>Configurar Malla Curricular</DialogTitle>
+        </DialogHeader>
+        
+        <div className="space-y-6">
+
+      {/* INFORMACIÓN BASE */}
+      <div className="grid grid-cols-2 gap-4">
+
+        <div>
+          <Label>Cantidad total de semestres *</Label>
+          <Input
+            type="number"
+            min={1}
+            max={20}
+            value={cantidadSemestres ?? ""}
+            onChange={(e) => setCantidadSemestres(Number(e.target.value))}
+          />
+        </div>
+
+        <div>
+          <Label>Electivas desde el semestre *</Label>
+          <Input
+            type="number"
+            min={1}
+            max={cantidadSemestres ?? 20}
+            value={desdeSemestreElectivas ?? ""}
+            onChange={(e) => setDesdeSemestreElectivas(Number(e.target.value))}
+          />
+        </div>
+
+      </div>
+
+      <Button className="mt-2" onClick={generarCamposAutomaticos}>
+        Generar campos automáticos
+      </Button>
+
+      {/* ELECTIVAS POR SEMESTRE AUTO */}
+      {Object.keys(electivasAuto).length > 0 && (
+        <div>
+          <Label>Electivas por semestre</Label>
+
+          <div className="grid grid-cols-3 gap-4 mt-2">
+            {Object.entries(electivasAuto).map(([sem, val]) => (
+              <div key={sem}>
+                <Label>Semestre {sem}</Label>
+                <Input
+                  type="number"
+                  value={val}
+                  onChange={(e) => {
+                    const nuevo = { ...electivasAuto };
+                    nuevo[sem] = Number(e.target.value);
+                    setElectivasAuto(nuevo);
+
+                    setConfigForm(prev => ({
+                      ...prev,
+                      electivasPorSemestreJson: nuevo
+                    }));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* REGLAS DE NIVELACIÓN AUTO */}
+      {Object.keys(reglasAuto).length > 0 && (
+        <div>
+          <Label>Reglas de nivelación</Label>
+
+          <div className="grid grid-cols-2 gap-4 mt-2">
+            {Object.entries(reglasAuto).map(([sem, regla]) => (
+              <div key={sem} className="border p-3 rounded-md">
+                <p className="font-bold mb-2">Semestre {sem}</p>
+
+                <Label>Mínimo créditos aprobados</Label>
+                <Input
+                  type="number"
+                  value={regla.minCreditosAprobados}
+                  onChange={(e) => {
+                    const nuevo = { ...reglasAuto };
+                    nuevo[sem].minCreditosAprobados = Number(e.target.value);
+                    setReglasAuto(nuevo);
+
+                    setConfigForm(prev => ({
+                      ...prev,
+                      reglasNivelacionJson: nuevo
+                    }));
+                  }}
+                />
+
+                <Label className="mt-2">Máx. periodos matriculados</Label>
+                <Input
+                  type="number"
+                  value={regla.maxPeriodosMatriculados}
+                  onChange={(e) => {
+                    const nuevo = { ...reglasAuto };
+                    nuevo[sem].maxPeriodosMatriculados = Number(e.target.value);
+                    setReglasAuto(nuevo);
+
+                    setConfigForm(prev => ({
+                      ...prev,
+                      reglasNivelacionJson: nuevo
+                    }));
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* OTROS CAMPOS NUMÉRICOS */}
+      <div className="grid grid-cols-3 gap-4">
+
+        <div>
+          <Label>Electivas requeridas</Label>
+          <Input
+            type="number"
+            onChange={(e) =>
+              setConfigForm(prev => ({
+                ...prev,
+                electivasRequeridas: Number(e.target.value)
+              }))
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Créditos totales</Label>
+          <Input
+            type="number"
+            onChange={(e) =>
+              setConfigForm(prev => ({
+                ...prev,
+                creditosTotalesPlan: Number(e.target.value)
+              }))
+            }
+          />
+        </div>
+
+        <div>
+          <Label>Créditos Trabajo de Grado</Label>
+          <Input
+            type="number"
+            onChange={(e) =>
+              setConfigForm(prev => ({
+                ...prev,
+                creditosTrabajoGrado: Number(e.target.value)
+              }))
+            }
+          />
+        </div>
+
+      </div>
+
+      {/* ARCHIVO DE MALLA */}
+      <div>
+        <Label>Archivo de malla (.xls / .xlsx)</Label>
+        <Input
+          type="file"
+          accept=".xlsx,.xls"
+          onChange={(e) => setExcelFile(e.target.files?.[0] ?? null)}
+        />
+      </div>
+
+    </div>
+
+
+        {/* BOTONES */}
+        <div className="flex justify-end space-x-2 mt-6">
+          <Button variant="outline" onClick={() => setIsConfigModalOpen(false)}>
+            Cancelar
+          </Button>
+
+          <Button
+            onClick={async () => {
+              if (!selectedPlanForConfig || !excelFile) {
+                toast.error("Faltan datos");
+                return;
+              }
+
+              try {
+                await cargarMalla(
+                  selectedPlanForConfig.programaId,
+                  selectedPlanForConfig.id,
+                  excelFile,
+                  configForm
+                );
+
+                toast.success("Malla cargada y plan activado");
+
+                setIsConfigModalOpen(false);
+                setExcelFile(null);
+                setConfigForm({
+                  electivasPorSemestreJson: {},
+                  reglasNivelacionJson: {},
+                  electivasRequeridas: 0,
+                  creditosTotalesPlan: 0,
+                  creditosTrabajoGrado: 0,
+                });
+
+                // Refrescar planes
+                const updated = await listarTodosLosPlanes();
+                setPlanes(updated);
+
+              } catch (err: any) {
+                toast.error(err.message ?? "Error al subir malla");
+              }
+            }}
+          >
+            Guardar y Activar Plan
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+    
+>>>>>>> Stashed changes
     </div>
   );
 }
