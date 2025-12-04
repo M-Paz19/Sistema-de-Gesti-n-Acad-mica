@@ -46,12 +46,19 @@ export function ElectivasModule() {
       ]);
 
       setDepartamentos(departamentosData);
-      setProgramas(programasData);
+
+      // Filtrar solo programas aprobados
+      const programasAprobados = programasData.filter(
+        (p: any) => p.estado === "APROBADO"
+      );
+      setProgramas(programasAprobados);
+
 
       const normalizedElectivas = electivasData.map((e: any) => ({
-      ...e,
-      programasIds: e.programas ? e.programas.map((p: any) => p.id) : [],
-    }));
+        ...e,
+        estado: e.estado === "PENDIENTE" ? "BORRADOR" : e.estado,
+        programasIds: e.programas ? e.programas.map((p: any) => p.id) : [],
+      }));
 
 
       setElectivas(normalizedElectivas);
@@ -169,41 +176,53 @@ export function ElectivasModule() {
 };
 
   const handleApprove = async (electivaId: string) => {
-  try {
-      const updated = await approveElectiva(electivaId);
-      setElectivas(prev =>
-        prev.map(e => e.id === updated.id ? { ...updated, programasIds: updated.programas?.map(p => p.id) ?? [] } : e)
-      );
+    try {
+      await approveElectiva(electivaId);
+
+      // Recargar electivas desde backend
+      const frescas = await fetchElectivas();
+
+      const normalizadas = frescas.map(e => ({
+        ...e,
+        estado: e.estado === "PENDIENTE" ? "BORRADOR" : e.estado,
+        programasIds: e.programas?.map((p: any) => p.id) ?? [],
+      }));
+
+      setElectivas(normalizadas);
+
       toast.success('Electiva aprobada');
       setFiltroEstado("TODOS");
       setSearchTerm("");
+
     } catch (err: any) {
       toast.error(err.message);
     }
   };
 
 
-  const handleReject = (electivaId: string) => {
-    setElectivas(prev => prev.map(e => 
-      e.id === electivaId 
-        ? { ...e, estado: 'RECHAZADA' as const }
-        : e
-    ));
-    toast.success('Electiva rechazada');
-  };
-
   const handleDeactivate = async (electivaId: string) => {
   try {
-    const updated = await deactivateElectiva(electivaId);
-    setElectivas(prev => prev.map(e => e.id === updated.id ? updated : e));
-    toast.success('Electiva desactivada');
-    setFiltroEstado("TODOS");
-    setSearchTerm("");
+      await deactivateElectiva(electivaId);
 
-  } catch (err: any) {
-    toast.error(err.message);
-  }
-};
+      const frescas = await fetchElectivas();
+
+      const normalizadas = frescas.map(e => ({
+        ...e,
+        estado: e.estado === "PENDIENTE" ? "BORRADOR" : e.estado,
+        programasIds: e.programas?.map((p: any) => p.id) ?? [],
+      }));
+
+      setElectivas(normalizadas);
+
+      toast.success("Electiva desactivada");
+      setFiltroEstado("TODOS");
+      setSearchTerm("");
+
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
 
   const handleReactivate = async (electivaId: string) => {
     try {
@@ -370,9 +389,8 @@ export function ElectivasModule() {
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="TODOS">Todos los estados</SelectItem>
-              <SelectItem value="PENDIENTE">Pendientes</SelectItem>
+              <SelectItem value="BORRADOR">Borrador</SelectItem>
               <SelectItem value="APROBADA">Aprobadas</SelectItem>
-              <SelectItem value="RECHAZADA">Rechazadas</SelectItem>
               <SelectItem value="INACTIVA">Inactivas</SelectItem>
             </SelectContent>
           </Select>
@@ -555,29 +573,6 @@ export function ElectivasModule() {
                                 setShowApproveDialog(false); 
                               }}>
                               Aprobar
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="outline" size="sm" className="text-red-600">
-                            <XCircle className="h-4 w-4 mr-1" />
-                            Rechazar
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>¿Rechazar electiva?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Esta acción rechazará la electiva "{electiva.nombre}". No estará disponible para ofertar.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => handleReject(electiva.id)}>
-                              Rechazar
                             </AlertDialogAction>
                           </AlertDialogFooter>
                         </AlertDialogContent>

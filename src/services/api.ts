@@ -262,20 +262,40 @@ export async function updateElectiva(id: string, electiva: any): Promise<Electiv
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(electiva),
   });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (_) {
+    // Evita el crash si la API no devuelve JSON
+    data = null;
+  }
+
   if (!res.ok) {
-    const data = await res.json();
     throw new Error(data?.message || "Error al actualizar electiva");
   }
-  return { ...data, programas: data.programas || [] };
+
+  return {
+    ...data,
+    programas: data?.programas || []
+  };
 }
 
-export async function approveElectiva(id: string): Promise<Electiva> {
+export async function approveElectiva(id: string): Promise<any> {
   const res = await fetch(`${API_URL}/api/electivas/${id}/aprobar`, { method: "PATCH" });
+
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (_) {
+    // Si no hay JSON, no pasa nada
+  }
+
   if (!res.ok) {
-    const data = await res.json();
     throw new Error(data?.message || "Error al aprobar electiva");
   }
-  return res.json();
+
+  return data; // Puede ser null si el backend no retorna nada
 }
 
 export async function deactivateElectiva(id: string): Promise<Electiva> {
@@ -329,18 +349,36 @@ export async function modificarPlan(programaId: number, planId: number, data: an
   return response.json();
 }
 
-export async function cargarMalla(programaId: number, planId: number, file: File, configuration: any) {
+export async function cargarMalla(programaId, planId, archivo, config) {
   const formData = new FormData();
-  formData.append('file', file);
-  formData.append('configuration', JSON.stringify(configuration));
-  const response = await fetch(`${API_URL}/api/programas/${programaId}/planes/${planId}/malla`, {
-    method: 'POST',
+
+  formData.append("file", archivo);
+  formData.append(
+    "configuracion",
+    new Blob([JSON.stringify(config)], { type: "application/json" })
+  );
+
+  const res = await fetch(`${API_URL}/api/programas/${programaId}/planes/${planId}/malla`, {
+    method: "POST",
     body: formData,
   });
-  if (!response.ok) throw new Error('Error al cargar malla');
-  return response.json();
+
+  // 👇 CAMBIO IMPORTANTE AQUÍ
+  let data = null;
+  try {
+    data = await res.json();
+  } catch (_) {
+    // Si no hay JSON, evitamos el error del frontend
+  }
+
+  if (!res.ok) {
+    throw data || { message: "Error desconocido en carga de malla" };
+  }
+
+  return data;
 }
 
+/*
 export async function listarTodosLosPlanes(): Promise<PlanEstudio[]> {
     try {
         const programas = await fetchProgramas();
@@ -363,11 +401,19 @@ export async function listarTodosLosPlanes(): Promise<PlanEstudio[]> {
         console.error("Error al listar todos los planes", error);
         return [];
     }
+}*/
+
+export async function listarTodosLosPlanes() {
+  const response = await fetch(`${API_URL}/api/planes`);
+  if (!response.ok) throw new Error('Error al listar todos los planes');
+  return response.json();
 }
 
+
 export async function obtenerMalla(planId: number) {
-    console.warn("Endpoint obtenerMalla no implementado en backend. Retornando array vacío.");
-    return []; 
+  const res = await fetch(`${API_URL}/api/planes/${planId}`);
+  if (!res.ok) throw new Error("Error al obtener malla curricular");
+  return res.json();
 }
 
 // ==========================================
