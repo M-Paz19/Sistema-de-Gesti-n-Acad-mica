@@ -694,14 +694,12 @@ export async function validarRequisitosGenerales(periodoId: number): Promise<Cam
 //    VALIDACIÓN NIVELADOS (ValidacionNiveladosController)
 // =========================================================
 
-// 1. Preseleccionar Nivelados
 export async function preseleccionarNivelados(periodoId: number): Promise<DatosAcademicoResponse[]> {
     const res = await fetch(`${API_URL}/api/validacion-nivelados/periodos/${periodoId}/preseleccionar-nivelados`, { method: "POST" });
     if (!res.ok) { const err = await res.json(); throw new Error(err.message); }
     return res.json();
 }
 
-// 2. Generar Reporte Visual (Subir Excel)
 export async function generarReporteNivelado(idDatosAcademicos: number, file: File): Promise<VerificacionNiveladoDTO> {
     const formData = new FormData();
     formData.append("archivo", file);
@@ -718,7 +716,6 @@ export async function generarReporteNivelado(idDatosAcademicos: number, file: Fi
     return res.json();
 }
 
-// 3. Registrar Decisión Final
 export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado: boolean): Promise<DatosAcademicoResponse> {
     const res = await fetch(`${API_URL}/api/validacion-nivelados/decision-final/${idDatosAcademicos}?nivelado=${nivelado}`, {
         method: "POST"
@@ -768,31 +765,21 @@ export async function obtenerAptosOrdenados(periodoId: number): Promise<Estudian
     return res.json();
 }
 
-/**
- * Llama al endpoint que GENERA y devuelve el Excel Técnico.
- * Retorna un Blob (Archivo binario).
- */
 export async function generarReporteTecnico(periodoId: number): Promise<Blob> {
     // Apunta al nuevo controlador ReporteAsignacionController
     const res = await fetch(`${API_URL}/api/reportes/periodos/${periodoId}/reporte-tecnico`, {
         method: 'GET'
-        // No hace falta headers especiales, fetch detecta el stream
     });
     
     if (!res.ok) {
-        // Intentamos leer el mensaje de error si el backend mandó texto
         const errorText = await res.text().catch(() => "Error desconocido al generar reporte técnico");
         throw new Error(errorText);
     }
     return res.blob();
 }
 
-/**
- * Llama al endpoint que GENERA y devuelve el Excel Público.
- * Retorna un Blob (Archivo binario).
- */
+
 export async function generarReportePublico(periodoId: number): Promise<Blob> {
-    // Apunta al nuevo controlador ReporteAsignacionController
     const res = await fetch(`${API_URL}/api/reportes/periodos/${periodoId}/reporte-publico`, {
         method: 'GET'
     });

@@ -40,7 +40,7 @@ import {
   generarReporteNivelado,
   generarReporteRanking,
   registrarDecisionFinal,
-  cerrarPeriodoAcademico, // <--- IMPORTADO
+  cerrarPeriodoAcademico, 
   VerificacionNiveladoDTO,
   procesarAsignacionMasiva,
   obtenerAptosOrdenados, 
@@ -95,8 +95,6 @@ export function ProcesamientoModule() {
   const recargarDatos = async (periodo: Periodo) => {
     if (!periodo) return;
     const pid = periodo.id;
-
-    // 1. Cargar Respuestas (Tab 1)
     setIsLoadingRespuestas(true);
     try {
         const data = await fetchRespuestasFormulario(pid);
@@ -112,7 +110,6 @@ export function ProcesamientoModule() {
         setIsLoadingRespuestas(false);
     }
 
-    // 2. Cargar Datos Académicos (Tab 3)
     const estadosConAcademicos = [
         'PROCESO_CALCULO_AVANCE', 
         'PROCESO_CALCULO_APTITUD', 
@@ -122,7 +119,7 @@ export function ProcesamientoModule() {
         'PROCESO_CARGA_SIMCA', 
         'PROCESO_CONFIRMACION_SIMCA', 
         'ASIGNACION_PROCESADA',
-        'CERRADO' // <--- AGREGADO: Para que se vean los datos históricos al cerrar
+        'CERRADO' 
     ];
     
     if (estadosConAcademicos.includes(periodo.estado)) {
@@ -134,7 +131,6 @@ export function ProcesamientoModule() {
         }
     }
 
-    // 3. Cargar Tabla de Asignación (Tab 4)
     if (periodo.estado === 'EN_PROCESO_ASIGNACION') {
         // CASO A: Estamos listos para asignar, traemos los Aptos.
         try {
@@ -148,10 +144,6 @@ export function ProcesamientoModule() {
         // CASO B: Ya se asignó o está cerrado.
         try {
             const resultados = await generarReporteRanking(pid);
-            // Si generarReporteRanking devuelve Blob (archivo), esta lógica fallará para mostrar datos en pantalla.
-            // Asumiremos que para visualización usamos los datos mapeados si es posible, 
-            // o si el endpoint devuelve JSON. Si devuelve Blob, aquí deberíamos usar otro endpoint de consulta.
-            // Ajustando para que intente mapear si es un array JSON:
             if (Array.isArray(resultados)) {
                  const mapeados: EstudianteOrdenamientoResponse[] = resultados.map((r: any, index: number) => ({
                     codigoEstudiante: r.codigo,
@@ -164,14 +156,12 @@ export function ProcesamientoModule() {
                 }));
                 setEstudiantesOrdenados(mapeados);
             } else {
-                // Si es blob u otro formato, limpiamos para no romper
                 setEstudiantesOrdenados([]);
             }
         } catch (error) {
             setEstudiantesOrdenados([]);
         }
     } else {
-        // Otros estados
         setEstudiantesOrdenados([]);
     }
   };
