@@ -1,6 +1,5 @@
 const API_URL = import.meta.env.VITE_API_URL || "http://localhost:8080";
 
-// ... (Interfaces anteriores se mantienen) ...
 
 // Nuevas Interfaces para Nivelación
 export interface MateriaComparadaDTO {
@@ -33,10 +32,8 @@ export interface DatosAcademicoResponse {
   aprobadas: number;
   esNivelado: boolean;
   porcentajeAvance: number;
-  estadoAptitud: string; // PENDIENTE_VALIDACION, POSIBLE_NIVELADO, etc.
+  estadoAptitud: string; 
 }
-
-// ... (Interfaces y funciones existentes: Departamento, Programa, Electiva, Periodo, Oferta, etc.) ...
 
 export interface Departamento {
   id: string;
@@ -86,6 +83,77 @@ export interface Oferta {
   nombrePeriodo: string;
   estado: 'OFERTADA' | 'EN_CURSO' | 'CERRADA';
   cuposPorPrograma: Record<string, number>;
+}
+
+export interface EstudianteAsignadoDTO {
+    codigo: string;
+    nombre: string;
+    programa: string;
+    puesto: number;
+}
+
+export interface OfertaReporteDTO {
+    nombreElectiva: string;
+    cuposTotales: number;
+    cuposDisponibles: number;
+    asignados?: EstudianteAsignadoDTO[];
+    listaEspera?: EstudianteAsignadoDTO[];
+}
+
+export interface DepartamentoReporteDTO {
+    departamento: string;
+    ofertas: OfertaReporteDTO[];
+}
+export interface EstudianteAsignacionReporteResponse {
+    codigo: string;
+    nombre: string;
+    programa: string;
+    promedio: number;
+    avance: number;
+    electivasAsignadas: string[];
+    electivasEnEspera: string[];
+}
+
+// --- Interfaces para Asignación ---
+export interface EstudianteOrdenamientoResponse {
+    codigoEstudiante: string;
+    nombreCompleto: string;
+    programa: string;
+    promedio: number;
+    avance: number;
+    electivasFaltantes: number;
+    puesto: number;
+}
+
+export interface DepartamentoReporteDTO {
+    departamento: string;
+    ofertas: {
+        nombreElectiva: string;
+        cuposTotales: number;
+        cuposDisponibles: number;
+        asignados: {
+            codigo: string;
+            nombre: string;
+            programa: string;
+            puesto: number;
+        }[];
+        listaEspera: {
+            codigo: string;
+            nombre: string;
+            programa: string;
+            puesto: number;
+        }[];
+    }[];
+}
+
+export interface EstudianteAsignacionReporteResponse {
+    codigo: string;
+    nombre: string;
+    programa: string;
+    promedio: number;
+    avance: number;
+    electivasAsignadas: string[];
+    electivasEnEspera: string[];
 }
 
 export interface PlanEstudio {
@@ -153,8 +221,6 @@ export interface SimcaCargaResponse {
   detalleInconsistencias: InconsistenciaDto[];
 }
 
-// ... (Funciones existentes de Departamentos, Programas, Electivas, Planes, Periodos, Ofertas) ...
-// ... (Omitidas para brevedad, asegúrate de mantenerlas) ...
 // ==========================================
 //             DEPARTAMENTOS
 // ==========================================
@@ -363,12 +429,11 @@ export async function cargarMalla(programaId, planId, archivo, config) {
     body: formData,
   });
 
-  // 👇 CAMBIO IMPORTANTE AQUÍ
   let data = null;
   try {
     data = await res.json();
   } catch (_) {
-    // Si no hay JSON, evitamos el error del frontend
+
   }
 
   if (!res.ok) {
@@ -378,30 +443,7 @@ export async function cargarMalla(programaId, planId, archivo, config) {
   return data;
 }
 
-/*
-export async function listarTodosLosPlanes(): Promise<PlanEstudio[]> {
-    try {
-        const programas = await fetchProgramas();
-        let todosLosPlanes: PlanEstudio[] = [];
-        
-        for (const prog of programas) {
-            try {
-                const planes = await listarPlanes(parseInt(prog.id));
-                const planesConPrograma = planes.map((p: any) => ({
-                   ...p, 
-                   programaId: parseInt(prog.id)
-                }));
-                todosLosPlanes = [...todosLosPlanes, ...planesConPrograma];
-            } catch (e) {
-                console.warn(`No se pudieron cargar planes para programa ${prog.id}`, e);
-            }
-        }
-        return todosLosPlanes;
-    } catch (error) {
-        console.error("Error al listar todos los planes", error);
-        return [];
-    }
-}*/
+
 
 export async function listarTodosLosPlanes() {
   const response = await fetch(`${API_URL}/api/planes`);
@@ -678,7 +720,6 @@ export async function generarReporteNivelado(idDatosAcademicos: number, file: Fi
 
 // 3. Registrar Decisión Final
 export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado: boolean): Promise<DatosAcademicoResponse> {
-    // OJO: El endpoint usa @RequestParam, así que usamos query params
     const res = await fetch(`${API_URL}/api/validacion-nivelados/decision-final/${idDatosAcademicos}?nivelado=${nivelado}`, {
         method: "POST"
     });
@@ -688,4 +729,90 @@ export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado
         throw new Error(err.message || "Error al registrar decisión"); 
     }
     return res.json();
+}
+
+// =========================================================
+//    MÓDULO DE ASIGNACIÓN 
+// =========================================================
+
+export async function filtrarEstudiantesNoElegibles(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+    const res = await fetch(`${API_URL}/api/asignacion/periodos/${periodoId}/filtrar-no-elegibles`, {
+        method: "POST"
+    });
+    
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al filtrar estudiantes no elegibles");
+    }
+    return res.json();
+}
+
+export async function procesarAsignacionMasiva(periodoId: number): Promise<CambioEstadoValidacionResponse> {
+    const res = await fetch(`${API_URL}/api/asignacion/periodos/${periodoId}/procesar-asignacion`, {
+        method: "POST"
+    });
+    if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || "Error al procesar la asignación masiva");
+    }
+    return res.json();
+}
+
+// =========================================================
+//    CONSULTA Y REPORTES (Modificado para descargar archivos)
+// =========================================================
+
+export async function obtenerAptosOrdenados(periodoId: number): Promise<EstudianteOrdenamientoResponse[]> {
+    const res = await fetch(`${API_URL}/api/consulta-asignacion/periodos/${periodoId}/aptos/ordenados`);
+    if (!res.ok) throw new Error("Error al obtener lista de estudiantes ordenados");
+    return res.json();
+}
+
+/**
+ * Llama al endpoint que GENERA y devuelve el Excel Técnico.
+ * Retorna un Blob (Archivo binario).
+ */
+export async function generarReporteTecnico(periodoId: number): Promise<Blob> {
+    // Apunta al nuevo controlador ReporteAsignacionController
+    const res = await fetch(`${API_URL}/api/reportes/periodos/${periodoId}/reporte-tecnico`, {
+        method: 'GET'
+        // No hace falta headers especiales, fetch detecta el stream
+    });
+    
+    if (!res.ok) {
+        // Intentamos leer el mensaje de error si el backend mandó texto
+        const errorText = await res.text().catch(() => "Error desconocido al generar reporte técnico");
+        throw new Error(errorText);
+    }
+    return res.blob();
+}
+
+/**
+ * Llama al endpoint que GENERA y devuelve el Excel Público.
+ * Retorna un Blob (Archivo binario).
+ */
+export async function generarReportePublico(periodoId: number): Promise<Blob> {
+    // Apunta al nuevo controlador ReporteAsignacionController
+    const res = await fetch(`${API_URL}/api/reportes/periodos/${periodoId}/reporte-publico`, {
+        method: 'GET'
+    });
+
+    if (!res.ok) {
+        const errorText = await res.text().catch(() => "Error desconocido al generar reporte público");
+        throw new Error(errorText);
+    }
+    return res.blob();
+}
+
+
+export async function generarReporteRanking(periodoId: number): Promise<Blob> {
+    const res = await fetch(`${API_URL}/api/consulta-asignacion/periodos/${periodoId}/reporte/ranking`, {
+        method: 'GET'
+    });
+
+    if (!res.ok) {
+        const errorText = await res.text().catch(() => "Error desconocido");
+        throw new Error(errorText || "Error al descargar reporte de ranking");
+    }
+    return res.blob();
 }
