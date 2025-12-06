@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Link, Upload, Lock, PlayCircle, Trash2, BookOpen, Edit, Eye } from 'lucide-react';
+import { Plus, Link, Upload, Lock, PlayCircle, Trash2, BookOpen, Edit, Eye, Search } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -31,6 +31,7 @@ export function PeriodosModule() {
   // Estados de UI
   const [selectedPeriodo, setSelectedPeriodo] = useState<Periodo | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [searchElectivaTerm, setSearchElectivaTerm] = useState(''); // <--- NUEVO ESTADO BUSCADOR
   
   // Estados para Modales y Formularios
   const [isAddingElectiva, setIsAddingElectiva] = useState(false);
@@ -90,7 +91,6 @@ export function PeriodosModule() {
 
   // --- Helpers ---
 
-  // Función auxiliar para obtener nombre de programa seguro
   const getNombrePrograma = (id: string | number) => {
     const prog = programas.find(p => String(p.id) === String(id));
     return prog ? prog.nombre : `Programa ID: ${id}`;
@@ -134,8 +134,6 @@ export function PeriodosModule() {
 
   const handleOpenPeriodo = async () => {
     if (!selectedPeriodo) return;
-    
-    // Validar que todas tengan al menos 1
     const invalidos = Object.values(opcionesPorPrograma).some(v => v < 1);
     if(invalidos) {
       toast.error("Todos los programas deben tener al menos 1 opción.");
@@ -143,7 +141,6 @@ export function PeriodosModule() {
     }
 
     try {
-      // Llamada a la API con el mapa de opciones
       const res = await abrirPeriodo(selectedPeriodo.id, opcionesPorPrograma, true); 
       toast.success(res.mensaje);
       setSelectedPeriodo(prev => prev ? { ...prev, estado: 'ABIERTO_FORMULARIO', urlFormulario: res.urlFormulario } : null);
@@ -189,8 +186,6 @@ export function PeriodosModule() {
 
   const prepareAddElectiva = (electiva: Electiva) => {
     setAddingCuposFor(electiva);
-    
-    // Inicializar cupos en 0 para los programas de la electiva
     const initialCupos: Record<string, number> = {};
     if(electiva.programas) {
         electiva.programas.forEach(p => initialCupos[p.id] = 0);
@@ -270,9 +265,16 @@ export function PeriodosModule() {
 
   // --- Utils UI ---
   
+  // 1. Filtramos las disponibles base
   const electivasParaAgregar = availableElectivas.filter(e => 
     !ofertas.some(o => o.electivaId === parseInt(e.id)) &&
     e.estado === 'APROBADA'
+  );
+
+  // 2. Filtramos según la búsqueda
+  const filteredElectivasList = electivasParaAgregar.filter(e => 
+    e.nombre.toLowerCase().includes(searchElectivaTerm.toLowerCase()) || 
+    e.codigo.toLowerCase().includes(searchElectivaTerm.toLowerCase())
   );
 
   const getEstadoBadge = (estado: string) => {
@@ -371,17 +373,16 @@ export function PeriodosModule() {
                      <DialogTrigger asChild>
                        <Button 
                           className="bg-green-600 hover:bg-green-700"
-                          onClick={handleInitOpenPeriodo} // Cargar programas al abrir
+                          onClick={handleInitOpenPeriodo}
                        >
                          <PlayCircle className="mr-2 h-4 w-4"/> Abrir Periodo
                        </Button>
                      </DialogTrigger>
-                     <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
+                     <DialogContent className="sm:max-w-[425px]">
                        <DialogHeader><DialogTitle>Abrir Periodo Académico</DialogTitle></DialogHeader>
                        <div className="space-y-4">
                          <Alert><AlertDescription>Defina el número de opciones que verá cada estudiante en el formulario según su programa.</AlertDescription></Alert>
                          
-                         {/* Iterar sobre programas APROBADOS */}
                          <div className="space-y-3">
                            {programas.filter(p => p.estado === 'APROBADO').map(prog => (
                               <div key={prog.id} className="flex justify-between items-center p-2 border rounded bg-slate-50">
@@ -484,7 +485,6 @@ export function PeriodosModule() {
                                 <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="h-8">Programa</TableHead><TableHead className="h-8 text-right">Cupos</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                   {Object.entries(oferta.cuposPorPrograma).map(([progId, cupos]) => {
-                                      // Usamos la función auxiliar también aquí para consistencia
                                       const progNombre = getNombrePrograma(progId);
                                       return (
                                         <TableRow key={progId} className="border-b-0 hover:bg-transparent">
@@ -507,15 +507,31 @@ export function PeriodosModule() {
                      <CardTitle className="text-base">Electivas Disponibles</CardTitle>
                      <p className="text-xs text-muted-foreground">Haz clic en + para agregar a la oferta</p>
                    </CardHeader>
-                   <CardContent className="flex-1 p-0 overflow-hidden">
-                     <ScrollArea className="h-[500px]">
+                   <CardContent className="flex-1 p-0 overflow-hidden flex flex-col">
+                     
+                     {/* --- BUSCADOR AÑADIDO AQUÍ --- */}
+                     <div className="px-4 py-3 bg-white border-b">
+                        <div className="relative">
+                            <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground"/>
+                            <Input 
+                                placeholder="Buscar electiva..." 
+                                className="pl-8 h-9 text-sm"
+                                value={searchElectivaTerm}
+                                onChange={(e) => setSearchElectivaTerm(e.target.value)}
+                            />
+                        </div>
+                     </div>
+
+                     <ScrollArea className="flex-1">
                        <div className="divide-y">
-                         {electivasParaAgregar.length === 0 ? (
+                         {filteredElectivasList.length === 0 ? (
                            <p className="p-8 text-sm text-center text-muted-foreground">
-                             No hay más electivas aprobadas disponibles para agregar.
+                             {electivasParaAgregar.length === 0 
+                                ? "No hay más electivas disponibles." 
+                                : "No se encontraron resultados."}
                            </p>
                          ) : (
-                           electivasParaAgregar.map(elec => (
+                           filteredElectivasList.map(elec => (
                              <div key={elec.id} className="p-3 hover:bg-accent flex justify-between items-center group transition-colors">
                                 <div className="overflow-hidden">
                                    <p className="font-medium text-sm truncate" title={elec.nombre}>{elec.nombre}</p>
@@ -540,7 +556,7 @@ export function PeriodosModule() {
 
       {/* MODAL: AGREGAR ELECTIVA (CUPOS) */}
       <Dialog open={isAddingElectiva} onOpenChange={setIsAddingElectiva}>
-        <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
+        <DialogContent className="sm:max-w-[350px]">
            <DialogHeader><DialogTitle>Definir Cupos: {addingCuposFor?.nombre}</DialogTitle></DialogHeader>
            <div className="space-y-4">
               <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>
@@ -578,8 +594,7 @@ export function PeriodosModule() {
 
       {/* MODAL: EDITAR CUPOS */}
       <Dialog open={isEditingCupos} onOpenChange={setIsEditingCupos}>
-        
-         <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
+         <DialogContent className="sm:max-w-[350px]">
             <DialogHeader><DialogTitle>Editar Cupos</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>

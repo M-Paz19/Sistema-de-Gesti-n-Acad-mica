@@ -274,7 +274,6 @@ export function ProcesamientoModule() {
         const periodoActualizado = { ...selectedPeriodo, estado: 'CERRADO' };
         setSelectedPeriodo(periodoActualizado);
         await loadPeriodos();
-        // Recargamos datos para asegurar que la vista no se rompa
         await recargarDatos(periodoActualizado);
     } catch (err: any) {
         toast.error(err.message || "Error al cerrar el periodo");
@@ -763,11 +762,15 @@ export function ProcesamientoModule() {
                              </Button>
                         </div>
 
-                        {/* --- BOTÓN CERRAR PERIODO --- */}
-                        
+
+                     {/* --- BOTÓN CERRAR PERIODO --- */}
+                        {['ASIGNACION_PROCESADA', 'GENERACION_REPORTE_DETALLADO', 'EN_PROCESO_ASIGNACION'].includes(selectedPeriodo?.estado || '') && (
                             <AlertDialog>
                                 <AlertDialogTrigger asChild>
-                                    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white ml-2">
+                                    <Button 
+                                        variant="outline" 
+                                        className="ml-2 border-red-200 text-red-700 bg-red-50 hover:bg-red-100"
+                                    >
                                         <Archive className="w-4 h-4 mr-2" /> Cerrar Periodo
                                     </Button>
                                 </AlertDialogTrigger>
@@ -780,14 +783,18 @@ export function ProcesamientoModule() {
                                     </AlertDialogHeader>
                                     <AlertDialogFooter>
                                         <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                                        <AlertDialogAction onClick={handleCerrarPeriodoDefinitivamente}>Sí, Cerrar Periodo</AlertDialogAction>
+                                        <AlertDialogAction 
+                                            onClick={handleCerrarPeriodoDefinitivamente}
+                                            className="ml-2 border-red-200 text-red-700 bg-red-50 hover:bg-red-100"
+                                        >
+                                            Sí, Cerrar Periodo
+                                        </AlertDialogAction>
                                     </AlertDialogFooter>
                                 </AlertDialogContent>
                             </AlertDialog>
-                        
-
+                        )}
                         {selectedPeriodo?.estado === 'CERRADO' && (
-                             <Badge className="bg-gray-800 text-white ml-2 py-2 px-4">
+                             <Badge className="ml-2 border-red-200 text-red-700 bg-red-50 hover:bg-red-100">
                                 <Archive className="w-4 h-4 mr-2" /> Periodo Cerrado
                              </Badge>
                         )}
