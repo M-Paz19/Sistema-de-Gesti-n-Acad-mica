@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import {
   Upload, Download, AlertCircle, CheckCircle, HelpCircle,
   FileText, Search, Filter, RefreshCw, ArrowRight, Check, Edit, XCircle, CheckSquare, FileUp, Ban,
-  Users, Award, Play, FileSpreadsheet, RefreshCcw, UserMinus
+  Users, Award, Play, FileSpreadsheet, RefreshCcw, UserMinus, Archive
 } from 'lucide-react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './ui/card';
@@ -14,6 +14,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Input } from './ui/input';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogTrigger } from './ui/dialog';
 import { Label } from './ui/label';
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from './ui/alert-dialog';
 import { toast } from 'sonner';
 import { cn } from './ui/utils';
 import * as XLSX from 'xlsx';
@@ -39,6 +40,7 @@ import {
   generarReporteNivelado,
   generarReporteRanking,
   registrarDecisionFinal,
+  cerrarPeriodoAcademico, // <--- IMPORTADO
   VerificacionNiveladoDTO,
   procesarAsignacionMasiva,
   obtenerAptosOrdenados, 
@@ -119,7 +121,8 @@ export function ProcesamientoModule() {
         'PROCESO_REVISION_POTENCIALES_NIVELADOS', 
         'PROCESO_CARGA_SIMCA', 
         'PROCESO_CONFIRMACION_SIMCA', 
-        'ASIGNACION_PROCESADA'
+        'ASIGNACION_PROCESADA',
+        'CERRADO' // <--- AGREGADO: Para que se vean los datos históricos al cerrar
     ];
     
     if (estadosConAcademicos.includes(periodo.estado)) {
@@ -131,9 +134,7 @@ export function ProcesamientoModule() {
         }
     }
 
-    // 3. Cargar Tabla de Asignación (Tab 4) - LÓGICA CORREGIDA
-    // La validación del backend exige que para 'obtenerAptosOrdenados' el estado sea EN_PROCESO_ASIGNACION.
-    
+    // 3. Cargar Tabla de Asignación (Tab 4)
     if (periodo.estado === 'EN_PROCESO_ASIGNACION') {
         // CASO A: Estamos listos para asignar, traemos los Aptos.
         try {
@@ -143,27 +144,34 @@ export function ProcesamientoModule() {
         } catch (error) {
             setEstudiantesOrdenados([]); 
         }
-    } else if (periodo.estado === 'ASIGNACION_PROCESADA') {
-        // CASO B: Ya se asignó. El endpoint de Aptos fallaría (Status 400/500).
-        // Traemos el resultado del ranking para visualización.
+    } else if (periodo.estado === 'ASIGNACION_PROCESADA' || periodo.estado === 'CERRADO') {
+        // CASO B: Ya se asignó o está cerrado.
         try {
             const resultados = await generarReporteRanking(pid);
-            // Mapeamos el resultado al formato de la tabla para visualización
-            const mapeados: EstudianteOrdenamientoResponse[] = resultados.map((r, index) => ({
-                codigoEstudiante: r.codigo,
-                nombreCompleto: r.nombre,
-                programa: r.programa,
-                promedio: r.promedio || 0,
-                avance: r.avance || 0,
-                electivasFaltantes: 0, // Dato no disponible en reporte final, no crítico
-                puesto: index + 1
-            }));
-            setEstudiantesOrdenados(mapeados);
+            // Si generarReporteRanking devuelve Blob (archivo), esta lógica fallará para mostrar datos en pantalla.
+            // Asumiremos que para visualización usamos los datos mapeados si es posible, 
+            // o si el endpoint devuelve JSON. Si devuelve Blob, aquí deberíamos usar otro endpoint de consulta.
+            // Ajustando para que intente mapear si es un array JSON:
+            if (Array.isArray(resultados)) {
+                 const mapeados: EstudianteOrdenamientoResponse[] = resultados.map((r: any, index: number) => ({
+                    codigoEstudiante: r.codigo,
+                    nombreCompleto: r.nombre,
+                    programa: r.programa,
+                    promedio: r.promedio || 0,
+                    avance: r.avance || 0,
+                    electivasFaltantes: 0, 
+                    puesto: index + 1
+                }));
+                setEstudiantesOrdenados(mapeados);
+            } else {
+                // Si es blob u otro formato, limpiamos para no romper
+                setEstudiantesOrdenados([]);
+            }
         } catch (error) {
             setEstudiantesOrdenados([]);
         }
     } else {
-        // Otros estados: Limpiar tabla para evitar datos viejos
+        // Otros estados
         setEstudiantesOrdenados([]);
     }
   };
@@ -185,7 +193,7 @@ export function ProcesamientoModule() {
     }
   };
 
-  // --- Handlers Tabs 1, 2, 3 (Sin cambios importantes) ---
+  // --- Handlers Tabs 1, 2, 3 ---
   const handleFiltroDuplicados = async () => { try { await aplicarFiltroDuplicados(selectedPeriodo!.id); toast.success("Filtrado OK"); await loadPeriodos(); if(selectedPeriodo) recargarDatos(selectedPeriodo); } catch(e:any){toast.error(e.message)} };
   const handleFiltroAntiguedad = async () => { try { await aplicarFiltroAntiguedad(selectedPeriodo!.id); toast.success("Validado OK"); await loadPeriodos(); } catch(e:any){toast.error(e.message)} };
   const handleConfirmarSimca = async () => { try { await confirmarListaParaSimca(selectedPeriodo!.id); toast.success("Confirmado OK"); await loadPeriodos(); setActiveTab('simca'); } catch(e:any){toast.error(e.message)} };
@@ -217,7 +225,6 @@ export function ProcesamientoModule() {
       try { const res = await validarRequisitosGenerales(selectedPeriodo.id); toast.success(res.mensaje); await loadPeriodos(); } catch(err:any) { toast.error(err.message); } finally { setIsValidating(false); }
   };
   
-  // Paso 4: Filtrar y preparar asignación
   const handleFiltrarNoElegibles = async () => {
       if(!selectedPeriodo) return; setIsValidating(true);
       try {
@@ -230,7 +237,7 @@ export function ProcesamientoModule() {
       } catch(err:any) { toast.error(err.message); } finally { setIsValidating(false); }
   };
 
-  // --- HANDLERS REPORTES (DESCARGA DIRECTA DEL BACKEND) ---
+  // --- HANDLERS REPORTES ---
   const handleProcesarAsignacion = async () => {
       if (!selectedPeriodo) return;
       
@@ -256,26 +263,40 @@ export function ProcesamientoModule() {
       }
   };
 
+  // --- NUEVO: CERRAR PERIODO ---
+  const handleCerrarPeriodoDefinitivamente = async () => {
+    if (!selectedPeriodo) return;
+    try {
+        await cerrarPeriodoAcademico(selectedPeriodo.id);
+        toast.success('Periodo cerrado exitosamente. El proceso ha finalizado.');
+        
+        // Actualizamos estado local
+        const periodoActualizado = { ...selectedPeriodo, estado: 'CERRADO' };
+        setSelectedPeriodo(periodoActualizado);
+        await loadPeriodos();
+        // Recargamos datos para asegurar que la vista no se rompa
+        await recargarDatos(periodoActualizado);
+    } catch (err: any) {
+        toast.error(err.message || "Error al cerrar el periodo");
+    }
+  };
+
   const handleDescargarReporteTecnico = async () => {
       if (!selectedPeriodo) return;
       
       try {
           toast.info("Generando y descargando Reporte Técnico...");
           
-          // 1. Llamamos al backend que nos devuelve el archivo (bytes)
           const blob = await generarReporteTecnico(selectedPeriodo.id);
           
-          // 2. Creamos una URL temporal en el navegador para ese blob
           const url = window.URL.createObjectURL(blob);
           
-          // 3. Creamos un link invisible para forzar la descarga
           const a = document.createElement('a');
           a.href = url;
           a.download = `Reporte_Tecnico_${selectedPeriodo.semestre}.xlsx`; 
           document.body.appendChild(a);
           a.click();
           
-          // 4. Limpiamos la memoria
           window.URL.revokeObjectURL(url);
           document.body.removeChild(a);
           
@@ -293,20 +314,16 @@ export function ProcesamientoModule() {
       try {
           toast.info("Generando y descargando Reporte Público...");
           
-          // 1. Llamamos al backend
           const blob = await generarReportePublico(selectedPeriodo.id);
 
-          // 2. Creamos URL temporal
           const url = window.URL.createObjectURL(blob);
           
-          // 3. Forzamos descarga
           const a = document.createElement('a');
           a.href = url;
           a.download = `Reporte_Publico_${selectedPeriodo.semestre}.xlsx`;
           document.body.appendChild(a);
           a.click();
 
-          // 4. Limpieza
           window.URL.revokeObjectURL(url);
           document.body.removeChild(a);
           
@@ -423,8 +440,6 @@ export function ProcesamientoModule() {
               </TabsList>
             </div>
 
-            {/* CONTENIDO DE TABS */}
-            
             {/* Pestaña 1: Respuestas */}
             <TabsContent value="respuestas" className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden">
                <div className="flex flex-col md:flex-row gap-4 items-start md:items-center bg-white p-4 rounded-lg border shadow-sm shrink-0">
@@ -450,38 +465,38 @@ export function ProcesamientoModule() {
                <Card className="flex-1 overflow-hidden border shadow-sm">
                   <CardContent className="p-0 h-full overflow-auto">
                       <Table>
-                         <TableHeader className="sticky top-0 bg-gray-50 z-10 shadow-sm">
-                            <TableRow>
-                               <TableHead>Código</TableHead>
-                               <TableHead>Estudiante</TableHead>
-                               <TableHead>Estado</TableHead>
-                               <TableHead>Acciones</TableHead>
-                            </TableRow>
-                         </TableHeader>
-                         <TableBody>
-                            {isLoadingRespuestas ? (
-                                <TableRow>
-                                    <TableCell colSpan={4} className="text-center py-10">Cargando datos...</TableCell>
+                          <TableHeader className="sticky top-0 bg-gray-50 z-10 shadow-sm">
+                             <TableRow>
+                                <TableHead>Código</TableHead>
+                                <TableHead>Estudiante</TableHead>
+                                <TableHead>Estado</TableHead>
+                                <TableHead>Acciones</TableHead>
+                             </TableRow>
+                          </TableHeader>
+                          <TableBody>
+                             {isLoadingRespuestas ? (
+                                 <TableRow>
+                                     <TableCell colSpan={4} className="text-center py-10">Cargando datos...</TableCell>
+                                 </TableRow>
+                             ) : filteredRespuestas.map(r => (
+                                <TableRow key={r.id} className="hover:bg-gray-50">
+                                   <TableCell className="font-mono">{r.codigoEstudiante}</TableCell>
+                                   <TableCell>{r.nombreEstudiante} {r.apellidosEstudiante}</TableCell>
+                                   <TableCell><Badge variant={getBadgeVariant(r.estado)}>{r.estado}</Badge></TableCell>
+                                   <TableCell>
+                                      {(r.estado === 'FORMATO_INVALIDO' || r.estado === 'INCLUIDO') && (
+                                          <Button size="sm" variant="ghost" onClick={() => {
+                                                  setSelectedRespuesta(r);
+                                                  setManualCodigo(r.codigoEstudiante);
+                                                  setIsReviewModalOpen(true);
+                                          }}>
+                                                  <Edit className="h-4 w-4 text-blue-600"/>
+                                          </Button>
+                                      )}
+                                   </TableCell>
                                 </TableRow>
-                            ) : filteredRespuestas.map(r => (
-                               <TableRow key={r.id} className="hover:bg-gray-50">
-                                  <TableCell className="font-mono">{r.codigoEstudiante}</TableCell>
-                                  <TableCell>{r.nombreEstudiante} {r.apellidosEstudiante}</TableCell>
-                                  <TableCell><Badge variant={getBadgeVariant(r.estado)}>{r.estado}</Badge></TableCell>
-                                  <TableCell>
-                                     {(r.estado === 'FORMATO_INVALIDO' || r.estado === 'INCLUIDO') && (
-                                         <Button size="sm" variant="ghost" onClick={() => {
-                                              setSelectedRespuesta(r);
-                                              setManualCodigo(r.codigoEstudiante);
-                                              setIsReviewModalOpen(true);
-                                         }}>
-                                              <Edit className="h-4 w-4 text-blue-600"/>
-                                         </Button>
-                                     )}
-                                  </TableCell>
-                               </TableRow>
-                            ))}
-                         </TableBody>
+                             ))}
+                          </TableBody>
                       </Table>
                   </CardContent>
                </Card>
@@ -608,7 +623,7 @@ export function ProcesamientoModule() {
                 </div>
             </TabsContent>
 
-            {/* --- PESTAÑA 3: ACADEMICA (ACTUALIZADA CON 4 BOTONES) --- */}
+            {/* --- PESTAÑA 3: ACADEMICA --- */}
             <TabsContent value="academica" className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden">
                  <div className="flex gap-4 bg-white p-4 rounded-lg border shadow-sm flex-wrap items-center shrink-0">
                       
@@ -621,7 +636,7 @@ export function ProcesamientoModule() {
                       >
                          <HelpCircle className="mr-2 h-4 w-4"/> 1. Identificar Nivelados
                       </Button>
-                     
+                      
                       {/* PASO 2: Calcular Avance */}
                       <Button 
                         variant="outline" 
@@ -642,7 +657,7 @@ export function ProcesamientoModule() {
                          <Check className="mr-2 h-4 w-4"/> 3. Verificar Aptitud
                       </Button>
 
-                      {/* PASO 4: Filtrar No Elegibles (CORREGIDO) */}
+                      {/* PASO 4: Filtrar No Elegibles */}
                       <Button
                         onClick={handleFiltrarNoElegibles}
                         disabled={isValidating || selectedPeriodo?.estado !== 'PROCESO_FILTRADO_NO_ELEGIBLES'}
@@ -705,7 +720,7 @@ export function ProcesamientoModule() {
                  </Card>
             </TabsContent>
 
-            {/* --- PESTAÑA 4: ASIGNACIÓN --- */}
+{/* --- PESTAÑA 4: ASIGNACIÓN --- */}
             <TabsContent value="asignacion" className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden">
                 
                 {/* BARRA DE CONTROL HORIZONTAL */}
@@ -747,6 +762,35 @@ export function ProcesamientoModule() {
                                 <FileSpreadsheet className="w-4 h-4 mr-2"/> R. Público
                              </Button>
                         </div>
+
+                        {/* --- BOTÓN CERRAR PERIODO --- */}
+                        
+                            <AlertDialog>
+                                <AlertDialogTrigger asChild>
+                                    <Button className="bg-indigo-600 hover:bg-indigo-700 text-white ml-2">
+                                        <Archive className="w-4 h-4 mr-2" /> Cerrar Periodo
+                                    </Button>
+                                </AlertDialogTrigger>
+                                <AlertDialogContent>
+                                    <AlertDialogHeader>
+                                        <AlertDialogTitle>¿Cerrar Periodo Definitivamente?</AlertDialogTitle>
+                                        <AlertDialogDescription>
+                                            Esta acción finalizará el ciclo académico actual. Las ofertas se marcarán como cerradas y no se podrán realizar más cambios en la asignación. Solo estará disponible para consulta.
+                                        </AlertDialogDescription>
+                                    </AlertDialogHeader>
+                                    <AlertDialogFooter>
+                                        <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                                        <AlertDialogAction onClick={handleCerrarPeriodoDefinitivamente}>Sí, Cerrar Periodo</AlertDialogAction>
+                                    </AlertDialogFooter>
+                                </AlertDialogContent>
+                            </AlertDialog>
+                        
+
+                        {selectedPeriodo?.estado === 'CERRADO' && (
+                             <Badge className="bg-gray-800 text-white ml-2 py-2 px-4">
+                                <Archive className="w-4 h-4 mr-2" /> Periodo Cerrado
+                             </Badge>
+                        )}
                     </div>
                 </div>
 

@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Plus, Search, Edit, Eye, Link, Upload, Lock, PlayCircle, Trash2, BookOpen } from 'lucide-react';
+import { Plus, Link, Upload, Lock, PlayCircle, Trash2, BookOpen, Edit, Eye } from 'lucide-react';
 import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
@@ -29,7 +29,6 @@ export function PeriodosModule() {
   const [availableElectivas, setAvailableElectivas] = useState<Electiva[]>([]);
   
   // Estados de UI
-  const [searchTerm, setSearchTerm] = useState('');
   const [selectedPeriodo, setSelectedPeriodo] = useState<Periodo | null>(null);
   const [isCreating, setIsCreating] = useState(false);
   
@@ -42,7 +41,6 @@ export function PeriodosModule() {
   const [editingOferta, setEditingOferta] = useState<Oferta | null>(null);
 
   const [isOpeningPeriod, setIsOpeningPeriod] = useState(false);
-  // Cambio: ahora usamos un mapa para opciones por programa
   const [opcionesPorPrograma, setOpcionesPorPrograma] = useState<Record<string, number>>({});
 
   const [formData, setFormData] = useState({
@@ -90,6 +88,14 @@ export function PeriodosModule() {
       .catch(err => toast.error(err.message));
   };
 
+  // --- Helpers ---
+
+  // Función auxiliar para obtener nombre de programa seguro
+  const getNombrePrograma = (id: string | number) => {
+    const prog = programas.find(p => String(p.id) === String(id));
+    return prog ? prog.nombre : `Programa ID: ${id}`;
+  };
+
   // --- Lógica de Negocio ---
 
   const handleCreatePeriodo = async () => {
@@ -116,7 +122,6 @@ export function PeriodosModule() {
     }
   };
 
-  // Prepara el estado de opciones por programa con valores por defecto (ej. 2)
   const handleInitOpenPeriodo = () => {
     const aprobados = programas.filter(p => p.estado === 'APROBADO');
     const initialOpciones: Record<string, number> = {};
@@ -157,10 +162,8 @@ export function PeriodosModule() {
       setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
       loadPeriodos();
     } catch (err: any) {
-      // Manejo específico para cuando falla la carga automática de Google Forms (409)
       if (err.message?.includes("cargar manualmente") || err.message?.includes("No fue posible obtener respuestas")) {
           toast.warning("No se pudieron obtener respuestas automáticas. El periodo se cerró, por favor realice la carga manual.");
-          // Actualizamos el estado localmente porque el backend SÍ cerró el periodo aunque falló la carga
           setSelectedPeriodo(prev => prev ? { ...prev, estado: 'CERRADO_FORMULARIO' } : null);
           loadPeriodos();
       } else {
@@ -186,7 +189,13 @@ export function PeriodosModule() {
 
   const prepareAddElectiva = (electiva: Electiva) => {
     setAddingCuposFor(electiva);
-    setCuposPorPrograma({});
+    
+    // Inicializar cupos en 0 para los programas de la electiva
+    const initialCupos: Record<string, number> = {};
+    if(electiva.programas) {
+        electiva.programas.forEach(p => initialCupos[p.id] = 0);
+    }
+    setCuposPorPrograma(initialCupos);
     setIsAddingElectiva(true);
   };
 
@@ -234,18 +243,18 @@ export function PeriodosModule() {
      });
 
      if (total !== 18) {
-        toast.error(`La suma total de cupos debe ser 18. Actual: ${total}`);
-        return;
+       toast.error(`La suma total de cupos debe ser 18. Actual: ${total}`);
+       return;
      }
 
      try {
-        await editarCupos(editingOferta.id, cuposMap);
-        toast.success('Cupos actualizados');
-        setIsEditingCupos(false);
-        setEditingOferta(null);
-        loadOfertas(selectedPeriodo!.id);
+       await editarCupos(editingOferta.id, cuposMap);
+       toast.success('Cupos actualizados');
+       setIsEditingCupos(false);
+       setEditingOferta(null);
+       loadOfertas(selectedPeriodo!.id);
      } catch (err:any) {
-        toast.error(err.message);
+       toast.error(err.message);
      }
   };
 
@@ -261,7 +270,6 @@ export function PeriodosModule() {
 
   // --- Utils UI ---
   
-  // Filtro: Electivas aprobadas que NO están ya en la oferta del periodo
   const electivasParaAgregar = availableElectivas.filter(e => 
     !ofertas.some(o => o.electivaId === parseInt(e.id)) &&
     e.estado === 'APROBADA'
@@ -336,8 +344,8 @@ export function PeriodosModule() {
                 </CardHeader>
                 <CardContent>
                   <div className="text-sm space-y-1 text-muted-foreground">
-                     <p>Inicio: {new Date(periodo.fechaApertura).toLocaleDateString()}</p>
-                     <p>Fin: {new Date(periodo.fechaCierre).toLocaleDateString()}</p>
+                      <p>Inicio: {new Date(periodo.fechaApertura).toLocaleDateString()}</p>
+                      <p>Fin: {new Date(periodo.fechaCierre).toLocaleDateString()}</p>
                   </div>
                   <Button variant="outline" className="w-full mt-4" onClick={() => setSelectedPeriodo(periodo)}>
                     <Eye className="mr-2 h-4 w-4" /> Ver Detalles
@@ -368,7 +376,7 @@ export function PeriodosModule() {
                          <PlayCircle className="mr-2 h-4 w-4"/> Abrir Periodo
                        </Button>
                      </DialogTrigger>
-                     <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+                     <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
                        <DialogHeader><DialogTitle>Abrir Periodo Académico</DialogTitle></DialogHeader>
                        <div className="space-y-4">
                          <Alert><AlertDescription>Defina el número de opciones que verá cada estudiante en el formulario según su programa.</AlertDescription></Alert>
@@ -376,14 +384,14 @@ export function PeriodosModule() {
                          {/* Iterar sobre programas APROBADOS */}
                          <div className="space-y-3">
                            {programas.filter(p => p.estado === 'APROBADO').map(prog => (
-                              <div key={prog.id} className="flex justify-between items-center">
+                              <div key={prog.id} className="flex justify-between items-center p-2 border rounded bg-slate-50">
                                   <Label className="w-2/3">{prog.nombre}</Label>
                                   <div className="flex items-center gap-2">
                                     <span className="text-xs text-muted-foreground">Opciones:</span>
                                     <Input 
                                       type="number" 
                                       min={1}
-                                      className="w-16"
+                                      className="w-16 h-8 text-center"
                                       value={opcionesPorPrograma[prog.id] || 2}
                                       onChange={e => setOpcionesPorPrograma({
                                           ...opcionesPorPrograma, 
@@ -438,7 +446,6 @@ export function PeriodosModule() {
             {/* CONTENEDOR PRINCIPAL DE CONFIGURACIÓN */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 flex-1 overflow-hidden">
               
-              {/* COLUMNA IZQUIERDA: OFERTAS ACTUALES (Ocupa 2 columnas) */}
               <Card className={`flex flex-col overflow-hidden ${selectedPeriodo.estado === 'CONFIGURACION' ? 'lg:col-span-2' : 'lg:col-span-3'}`}>
                  <CardHeader>
                    <CardTitle>Oferta Académica ({ofertas.length})</CardTitle>
@@ -452,7 +459,7 @@ export function PeriodosModule() {
                       </div>
                     ) : (
                       ofertas.map(oferta => (
-                          <div key={oferta.id} className="border rounded-lg p-4 shadow-sm">
+                          <div key={oferta.id} className="border rounded-lg p-4 shadow-sm bg-white">
                             <div className="flex justify-between items-start mb-2">
                                 <div>
                                   <h3 className="font-bold text-lg">{oferta.nombreElectiva}</h3>
@@ -477,7 +484,8 @@ export function PeriodosModule() {
                                 <TableHeader><TableRow className="hover:bg-transparent"><TableHead className="h-8">Programa</TableHead><TableHead className="h-8 text-right">Cupos</TableHead></TableRow></TableHeader>
                                 <TableBody>
                                   {Object.entries(oferta.cuposPorPrograma).map(([progId, cupos]) => {
-                                      const progNombre = programas.find(p => p.id === String(progId))?.nombre || `Programa ${progId}`;
+                                      // Usamos la función auxiliar también aquí para consistencia
+                                      const progNombre = getNombrePrograma(progId);
                                       return (
                                         <TableRow key={progId} className="border-b-0 hover:bg-transparent">
                                           <TableCell className="py-1">{progNombre}</TableCell>
@@ -493,7 +501,6 @@ export function PeriodosModule() {
                  </CardContent>
               </Card>
 
-              {/* COLUMNA DERECHA: ELECTIVAS DISPONIBLES (Ocupa 1 columna, SOLO visible en CONFIGURACION) */}
               {selectedPeriodo.estado === 'CONFIGURACION' && (
                 <Card className="flex flex-col overflow-hidden border-l-4 border-l-[#FDB913]">
                    <CardHeader className="bg-muted/20 pb-4">
@@ -533,55 +540,77 @@ export function PeriodosModule() {
 
       {/* MODAL: AGREGAR ELECTIVA (CUPOS) */}
       <Dialog open={isAddingElectiva} onOpenChange={setIsAddingElectiva}>
-        <DialogContent>
+        <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
            <DialogHeader><DialogTitle>Definir Cupos: {addingCuposFor?.nombre}</DialogTitle></DialogHeader>
            <div className="space-y-4">
               <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>
               
-              {/* CORRECCIÓN CRÍTICA AQUÍ: Validación de programas con ?. y fallback a [] */}
-              {(addingCuposFor?.programas || []).map(prog => (
-                  <div key={prog.id} className="flex justify-between items-center">
-                      <Label className="w-2/3">{prog.nombre}</Label>
-                      <Input 
-                        type="number" 
-                        className="w-20" 
-                        value={cuposPorPrograma[prog.id] || ''} 
-                        onChange={e => setCuposPorPrograma({...cuposPorPrograma, [prog.id]: parseInt(e.target.value)})}
-                      />
-                  </div>
-              ))}
+              <div className="max-h-[300px] overflow-y-auto pr-2 space-y-2">
+                {(addingCuposFor?.programas || []).map(prog => {
+                      const nombreMostrar = getNombrePrograma(prog.id);
+
+                      return (
+                          <div key={prog.id} className="flex justify-between items-center p-3 border rounded-md bg-slate-50">
+                              <Label className="font-medium text-sm flex-1">{nombreMostrar}</Label>
+                              <Input 
+                                type="number" 
+                                min="0"
+                                className="w-24 text-center bg-white" 
+                                placeholder="0"
+                                value={cuposPorPrograma[prog.id] || ''} 
+                                onChange={e => setCuposPorPrograma({...cuposPorPrograma, [prog.id]: parseInt(e.target.value)})}
+                              />
+                          </div>
+                      );
+                  })}
+              </div>
               
-              <div className="flex justify-between font-bold pt-2 border-t">
-                 <span>Total:</span>
-                 <span className={Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0) === 18 ? 'text-green-600' : 'text-red-600'}>
+              <div className="flex justify-between items-center font-bold pt-4 border-t">
+                 <span>Total Asignado:</span>
+                 <span className={`text-lg ${Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0) === 18 ? 'text-green-600' : 'text-red-600'}`}>
                     {Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0)} / 18
                  </span>
               </div>
-              <Button onClick={confirmAddElectiva} className="w-full">Agregar a Oferta</Button>
+              <Button onClick={confirmAddElectiva} className="w-full bg-[#003366]">Agregar a Oferta</Button>
            </div>
         </DialogContent>
       </Dialog>
 
       {/* MODAL: EDITAR CUPOS */}
       <Dialog open={isEditingCupos} onOpenChange={setIsEditingCupos}>
-         <DialogContent>
+        
+         <DialogContent className="w-[480px] max-w-full p-6 rounded-xl">
             <DialogHeader><DialogTitle>Editar Cupos</DialogTitle></DialogHeader>
             <div className="space-y-4">
-              {editingOferta && Object.keys(editingOferta.cuposPorPrograma).map(progId => {
-                   const progName = programas.find(p => p.id === String(progId))?.nombre || progId;
-                   return (
-                     <div key={progId} className="flex justify-between items-center">
-                        <Label className="w-2/3">{progName}</Label>
-                        <Input 
-                           type="number" 
-                           className="w-20" 
-                           value={cuposPorPrograma[progId]} 
-                           onChange={e => setCuposPorPrograma({...cuposPorPrograma, [progId]: parseInt(e.target.value)})}
-                        />
-                     </div>
-                   )
-              })}
-              <Button onClick={confirmEditCupos} className="w-full">Guardar Cambios</Button>
+              <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>
+
+              <div className="max-h-[300px] overflow-y-auto pr-2 space-y-2">
+                {Object.keys(cuposPorPrograma).map(progId => {
+                    const progName = getNombrePrograma(progId);
+                    
+                    return (
+                      <div key={progId} className="flex justify-between items-center p-3 border rounded-md bg-slate-50">
+                         <Label className="font-medium text-sm flex-1">{progName}</Label>
+                         <Input 
+                            type="number" 
+                            min="0"
+                            className="w-24 text-center bg-white" 
+                            value={cuposPorPrograma[progId]} 
+                            onChange={e => setCuposPorPrograma({...cuposPorPrograma, [progId]: parseInt(e.target.value)})}
+                         />
+                      </div>
+                    )
+                })}
+              </div>
+
+              <div className="flex justify-between items-center font-bold pt-4 border-t">
+                 <span>Total Asignado:</span>
+                 <span className={`text-lg ${Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0) === 18 ? 'text-green-600' : 'text-red-600'}`}>
+                    {Object.values(cuposPorPrograma).reduce((a,b) => (parseInt(String(a))||0) + (parseInt(String(b))||0), 0)} / 18
+                 </span>
+              </div>
+
+              <Button onClick={confirmEditCupos} className="w-full bg-[#003366]">Guardar Cambios</Button>
             </div>
          </DialogContent>
       </Dialog>
