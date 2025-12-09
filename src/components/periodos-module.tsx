@@ -556,7 +556,7 @@ export function PeriodosModule() {
 
       {/* MODAL: AGREGAR ELECTIVA (CUPOS) */}
       <Dialog open={isAddingElectiva} onOpenChange={setIsAddingElectiva}>
-        <DialogContent className="sm:max-w-[350px]">
+        <DialogContent className="sm:max-w-[450px] max-h-[80vh] overflow-y-auto rounded-lg">
            <DialogHeader><DialogTitle>Definir Cupos: {addingCuposFor?.nombre}</DialogTitle></DialogHeader>
            <div className="space-y-4">
               <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>
@@ -594,7 +594,7 @@ export function PeriodosModule() {
 
       {/* MODAL: EDITAR CUPOS */}
       <Dialog open={isEditingCupos} onOpenChange={setIsEditingCupos}>
-         <DialogContent className="sm:max-w-[350px]">
+         <DialogContent className="sm:max-w-[450px] max-h-[80vh] overflow-y-auto rounded-lg">
             <DialogHeader><DialogTitle>Editar Cupos</DialogTitle></DialogHeader>
             <div className="space-y-4">
               <Alert><AlertDescription>La suma total de cupos debe ser exactamente 18.</AlertDescription></Alert>

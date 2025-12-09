@@ -149,7 +149,6 @@ export function DepartamentosModule() {
               {departamento.descripcion && (
                 <p className="text-sm text-muted-foreground">{departamento.descripcion}</p>
               )}
-              <p className="text-sm"><span className="font-medium">Creado:</span> {departamento.fechaCreacion}</p>
 
               {/* Botón Editar */}
               <div className="flex space-x-2 mt-4">

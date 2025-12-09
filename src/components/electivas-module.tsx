@@ -39,11 +39,12 @@ export function ElectivasModule() {
   useEffect(() => {
   const loadData = async () => {
     try {
+      const incluirInactivas = filtroEstado === "INACTIVA" ? true : showInactive;
       const [electivasData, departamentosData, programasData] = await Promise.all([
-        fetchElectivas(),
-        fetchDepartamentos(),
-        fetchProgramas()
-      ]);
+          fetchElectivas(incluirInactivas),
+          fetchDepartamentos(),
+          fetchProgramas()
+        ]);
 
       setDepartamentos(departamentosData);
 
@@ -69,18 +70,29 @@ export function ElectivasModule() {
   };
 
   loadData();
-}, []);
+}, [showInactive, filtroEstado]);
 
 
 
-  const filteredElectivas = electivas.filter(electiva => {
-    const matchesSearch =
-      electiva.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      electiva.codigo.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesEstado = filtroEstado === 'TODOS' || electiva.estado === filtroEstado;
-    const showInactiveFilter = showInactive || electiva.estado !== 'INACTIVA';
-    return matchesSearch && matchesEstado && showInactiveFilter;
-  });
+    const filteredElectivas = electivas.filter((electiva) => {
+      const matchesSearch =
+        electiva.nombre.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        electiva.codigo.toLowerCase().includes(searchTerm.toLowerCase());
+
+      // Si el filtro NO es "TODOS", IGNORAR showInactive completamente
+      if (filtroEstado !== "TODOS") {
+        return matchesSearch && electiva.estado === filtroEstado;
+      }
+
+      // Si el filtro ES "TODOS":
+      // Si NO se deben mostrar inactivas y la electiva está inactiva → ocultarla
+      if (!showInactive && electiva.estado === "INACTIVA") {
+        return false;
+      }
+
+      return matchesSearch;
+    });
+
 
   const getEstadoBadgeVariant = (estado: string) => {
     switch (estado) {
@@ -394,16 +406,18 @@ export function ElectivasModule() {
               <SelectItem value="INACTIVA">Inactivas</SelectItem>
             </SelectContent>
           </Select>
-          <div className="flex items-center space-x-2">
-            <Switch
-              id="show-inactive"
-              checked={showInactive}
-              onCheckedChange={setShowInactive}
-            />
-            <Label htmlFor="show-inactive" className="text-sm">
-              Mostrar inactivas
-            </Label>
-          </div>
+          {filtroEstado === "TODOS" && (
+            <div className="flex items-center space-x-2">
+              <Switch
+                id="show-inactive"
+                checked={showInactive}
+                onCheckedChange={setShowInactive}
+              />
+              <Label htmlFor="show-inactive" className="text-sm">
+                Mostrar inactivas
+              </Label>
+            </div>
+          )}
         </div>
 
         <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">

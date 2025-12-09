@@ -54,6 +54,48 @@ export function PlanesModule() {
       creditosTotalesPlan: 0,
       creditosTrabajoGrado: 0,
     });
+    function resetConfigModal() {
+      setCantidadSemestres(null);
+      setDesdeSemestreElectivas(null);
+      setElectivasAuto({});
+      setReglasAuto({});
+      setConfigForm({
+        electivasPorSemestreJson: {},
+        reglasNivelacionJson: {},
+        electivasRequeridas: 0,
+        creditosTotalesPlan: 0,
+        creditosTrabajoGrado: 0,
+      });
+      setExcelFile(null);
+      setSelectedPlanForConfig(null);
+    }
+    function normalizarPlan(p: any) {
+      return {
+        id: p.id,
+        nombre: p.nombre,
+        version: p.version,
+        estado: p.estado,
+        programaId: p.programaId,
+        año: p.anioInicio,
+        totalCreditos: p.creditosTotalesPlan ?? 0,
+        materiasCount: p.materias?.length ?? 0,
+        electivasRequeridas: p.electivasRequeridas ?? 0,
+        creditosTrabajoGrado: p.creditosTrabajoGrado ?? 0,
+
+        // REGLA IMPORTANTE:
+        mallaCargar: p.estado === "CONFIGURACION_PENDIENTE",
+
+        reglasNivelacion: p.reglasNivelacion ?? {},
+        electivasPorSemestre: p.electivasPorSemestre ?? {},
+        fechaCreacion: p.fechaCreacion ?? "N/A",
+      };
+    }
+    const semestreANombre: Record<string, string> = {
+      "8": "Octavo",
+      "9": "Noveno",
+      "10": "Décimo",
+    };
+
     useEffect(() => {
       (async () => {
         try {
@@ -379,7 +421,7 @@ export function PlanesModule() {
           </div>
         </div>
   
-        <div className="flex-1 overflow-hidden">
+        <div className="flex-1 overflow-y-auto">
           {!selectedPlan ? (
             <div className="p-6 space-y-4 h-full overflow-y-auto">
               <div className="flex space-x-4">
@@ -626,13 +668,24 @@ export function PlanesModule() {
           </DialogContent>
         </Dialog>
   
-        <Dialog open={isConfigModalOpen} onOpenChange={setIsConfigModalOpen}>
-        <DialogContent className="max-w-3xl">
-          <DialogHeader>
+        <Dialog 
+          open={isConfigModalOpen} 
+          onOpenChange={(open) => {
+            setIsConfigModalOpen(open);
+            if (!open) resetConfigModal(); 
+          }}
+        >
+
+        <DialogContent
+          className="max-w-3xl p-0 max-h-[90vh] overflow-y-auto 
+                    [&>div:last-child]:overflow-y-auto 
+                    [&>div:last-child]:max-h-[85vh]"
+        >
+          <DialogHeader className="p-6 pb-2">
             <DialogTitle>Configurar Malla Curricular</DialogTitle>
           </DialogHeader>
           
-          <div className="space-y-6">
+          <div className="p-6 space-y-6">
   
         {/* INFORMACIÓN BASE */}
         <div className="grid grid-cols-2 gap-4">
@@ -800,7 +853,11 @@ export function PlanesModule() {
   
           {/* BOTONES */}
           <div className="flex justify-end space-x-2 mt-6">
-            <Button variant="outline" onClick={() => setIsConfigModalOpen(false)}>
+            <Button variant="outline" onClick={() => {
+              resetConfigModal();
+              setIsConfigModalOpen(false);
+            }}>
+
               Cancelar
             </Button>
   
@@ -824,6 +881,12 @@ export function PlanesModule() {
                 }
 
                 try {
+                  const reglasNivelacionParaBackend = Object.fromEntries(
+                      Object.entries(configForm.reglasNivelacionJson).map(([sem, regla]) => [
+                          semestreANombre[sem] || sem,  // convierte "8" -> "Octavo"
+                          regla
+                      ])
+                  );
                   // Se envía un objeto válido para Spring Boot
                   await cargarMalla(
                     selectedPlanForConfig.programaId,
@@ -833,7 +896,7 @@ export function PlanesModule() {
                       electivasRequeridas: Number(configForm.electivasRequeridas),
                       creditosTrabajoGrado: Number(configForm.creditosTrabajoGrado),
                       creditosTotalesPlan: Number(configForm.creditosTotalesPlan),
-                      reglasNivelacionJson: configForm.reglasNivelacionJson,
+                      reglasNivelacionJson: reglasNivelacionParaBackend,
                       electivasPorSemestreJson: configForm.electivasPorSemestreJson
                     }
                   );
@@ -852,7 +915,8 @@ export function PlanesModule() {
 
                   // Refrescar planes
                   const updated = await listarTodosLosPlanes();
-                  setPlanes(updated);
+                  setPlanes(updated.map(normalizarPlan));
+
 
                 } catch (err: any) {
                   toast.error(err.message ?? "Error al subir malla");

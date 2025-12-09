@@ -346,8 +346,8 @@ export async function disablePrograma(id: string): Promise<Programa> {
 //             ELECTIVAS
 // ==========================================
 
-export async function fetchElectivas(): Promise<Electiva[]> {
-  const res = await fetch(`${API_URL}/api/electivas`);
+export async function fetchElectivas(mostrarInactivas: boolean = false): Promise<Electiva[]> {
+  const res = await fetch(`${API_URL}/api/electivas?mostrarInactivas=${mostrarInactivas}`);
   if (!res.ok) throw new Error("Error al obtener electivas");
   return res.json();
 }

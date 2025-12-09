@@ -168,7 +168,6 @@ export function ReportesModule() {
                     <TabsList className="w-fit bg-white border shadow-sm">
                         <TabsTrigger value="general" className="gap-2 px-6"><PieIcon className="w-4 h-4"/> General</TabsTrigger>
                         <TabsTrigger value="popularidad" className="gap-2 px-6"><FileBarChart className="w-4 h-4"/> Popularidad</TabsTrigger>
-                        <TabsTrigger value="historial" className="gap-2 px-6"><History className="w-4 h-4"/> Historial Estudiante</TabsTrigger>
                     </TabsList>
 
                    {!reportesDisponibles ? (
@@ -193,33 +192,6 @@ export function ReportesModule() {
                     <TabsContent value="general" className="flex-1 overflow-y-auto w-full">
                         <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6 pb-6">
                             
-                            {/* Resumen Card */}
-                            <Card className="col-span-1 shadow-sm border-t-4 border-t-[#003366] h-[400px]">
-                                <CardHeader>
-                                    <CardTitle>Resumen del Proceso</CardTitle>
-                                    <CardDescription>Estado de estudiantes procesados</CardDescription>
-                                </CardHeader>
-                                <CardContent className="h-[300px]">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <PieChart>
-                                            <Pie
-                                                data={resumenChartData}
-                                                cx="50%" cy="50%"
-                                                innerRadius={70} outerRadius={100}
-                                                paddingAngle={2}
-                                                dataKey="value"
-                                            >
-                                                {resumenChartData.map((entry, index) => (
-                                                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
-                                                ))}
-                                            </Pie>
-                                            <Tooltip />
-                                            <Legend verticalAlign="bottom" height={36}/>
-                                        </PieChart>
-                                    </ResponsiveContainer>
-                                </CardContent>
-                            </Card>
-
                             {/* Distribución por Programa */}
                             <Card className="col-span-1 xl:col-span-2 shadow-sm h-[400px]">
                                 <CardHeader className="flex flex-row items-center justify-between">
@@ -239,26 +211,6 @@ export function ReportesModule() {
                                             <YAxis />
                                             <Tooltip cursor={{fill: '#f3f4f6'}} />
                                             <Bar dataKey="cantidadAsignadas" name="Cupos Asignados" fill="#003366" radius={[4, 4, 0, 0]} barSize={50} />
-                                        </BarChart>
-                                    </ResponsiveContainer>
-                                </CardContent>
-                            </Card>
-
-                            {/* Distribución de Carga */}
-                            <Card className="col-span-1 md:col-span-2 xl:col-span-3 shadow-sm h-[350px]">
-                                <CardHeader>
-                                    <CardTitle>Distribución de Carga Académica</CardTitle>
-                                    <CardDescription>Cuántos estudiantes recibieron 1, 2, o 3 electivas</CardDescription>
-                                </CardHeader>
-                                <CardContent className="h-[250px]">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <BarChart data={distribucionData?.distribucion || []} layout="vertical" margin={{left: 20}}>
-                                            <CartesianGrid strokeDasharray="3 3" horizontal={true} vertical={false}/>
-                                            <XAxis type="number" />
-                                            <YAxis dataKey="cantidadAsignadas" type="category" name="Electivas" width={100} tickFormatter={(val) => `${val} Electivas`} />
-                                            <Tooltip cursor={{fill: '#f3f4f6'}} />
-                                            <Bar dataKey="cantidadEstudiantes" name="Estudiantes" fill="#FDB913" radius={[0, 4, 4, 0]} barSize={40}>
-                                            </Bar>
                                         </BarChart>
                                     </ResponsiveContainer>
                                 </CardContent>
@@ -304,96 +256,6 @@ export function ReportesModule() {
                                 </ResponsiveContainer>
                             </CardContent>
                         </Card>
-                    </TabsContent>
-
-                    {/* --- TAB 3: HISTORIAL (Full Width) --- */}
-                    <TabsContent value="historial" className="flex-1 overflow-y-auto w-full">
-                        <div className="flex flex-col gap-6 w-full">
-                            <Card className="w-full">
-                                <CardHeader><CardTitle>Buscar Estudiante</CardTitle></CardHeader>
-                                <CardContent className="space-y-4">
-                                    <div className="flex gap-2 w-full max-w-2xl">
-                                        <Input 
-                                            placeholder="Código, Nombre o Apellido..." 
-                                            value={searchTerm}
-                                            onChange={(e) => setSearchTerm(e.target.value)}
-                                            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-                                            className="flex-1"
-                                        />
-                                        <Button onClick={handleSearch} className="bg-[#003366]"><Search className="w-4 h-4 mr-2"/> Buscar</Button>
-                                    </div>
-                                    
-                                    {searchResults.length > 0 && (
-                                        <div className="border rounded-md divide-y max-h-[300px] overflow-y-auto w-full max-w-2xl bg-white shadow-lg absolute z-10">
-                                            {searchResults.map(est => (
-                                                <div 
-                                                    key={est.codigo} 
-                                                    className="p-3 hover:bg-gray-50 cursor-pointer flex justify-between items-center"
-                                                    onClick={() => handleSelectEstudiante(est)}
-                                                >
-                                                    <div>
-                                                        <p className="font-medium text-[#003366]">{est.nombreCompleto}</p>
-                                                        <p className="text-xs text-muted-foreground">{est.codigo} - {est.programa}</p>
-                                                    </div>
-                                                    <ArrowRight className="w-4 h-4 text-gray-400"/>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    )}
-                                </CardContent>
-                            </Card>
-
-                            {selectedEstudiante && selectedEstudianteInfo && (
-                                <div className="space-y-4 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
-                                    <div className="flex items-center gap-4 bg-white p-4 rounded-lg border shadow-sm">
-                                        <div className="bg-[#003366] p-3 rounded-full text-white">
-                                            <User className="w-8 h-8"/>
-                                        </div>
-                                        <div>
-                                            <h2 className="text-2xl font-bold text-[#003366]">{selectedEstudianteInfo.nombreCompleto}</h2>
-                                            <p className="text-muted-foreground text-lg">{selectedEstudianteInfo.programa} - <span className="font-mono">{selectedEstudianteInfo.codigo}</span></p>
-                                        </div>
-                                    </div>
-
-                                    <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
-                                        {selectedEstudiante.map((hist, idx) => (
-                                            <Card key={idx} className="border-l-4 border-l-[#FDB913] hover:shadow-md transition-shadow">
-                                                <CardHeader className="pb-2">
-                                                    <div className="flex justify-between items-center">
-                                                        <CardTitle className="text-xl">{hist.periodo}</CardTitle>
-                                                        <Badge className={hist.estadoAptitud === 'APTO' ? 'bg-green-600' : 'bg-gray-500'}>
-                                                            {hist.estadoAptitud}
-                                                        </Badge>
-                                                    </div>
-                                                    <CardDescription className="flex gap-4 pt-1">
-                                                        <span>Promedio: <b>{hist.promedio}</b></span>
-                                                        <span>Avance: <b>{hist.avance}%</b></span>
-                                                    </CardDescription>
-                                                </CardHeader>
-                                                <CardContent>
-                                                    <div className="grid md:grid-cols-2 gap-6 pt-2">
-                                                        <div className="bg-gray-50 p-3 rounded-md">
-                                                            <h4 className="text-sm font-bold mb-2 text-gray-600 uppercase tracking-wide">Solicitadas</h4>
-                                                            <ul className="list-disc list-inside text-sm text-gray-700 space-y-1">
-                                                                {hist.electivasSolicitadas.map((e, i) => <li key={i}>{e}</li>)}
-                                                                {hist.electivasSolicitadas.length === 0 && <li className="text-gray-400 italic">Ninguna</li>}
-                                                            </ul>
-                                                        </div>
-                                                        <div className="bg-green-50 p-3 rounded-md">
-                                                            <h4 className="text-sm font-bold mb-2 text-green-700 uppercase tracking-wide">Asignadas</h4>
-                                                            <ul className="list-disc list-inside text-sm font-medium text-gray-800 space-y-1">
-                                                                {hist.electivasAsignadas.map((e, i) => <li key={i}>{e}</li>)}
-                                                                {hist.electivasAsignadas.length === 0 && <li className="text-gray-400 italic">Ninguna</li>}
-                                                            </ul>
-                                                        </div>
-                                                    </div>
-                                                </CardContent>
-                                            </Card>
-                                        ))}
-                                    </div>
-                                </div>
-                            )}
-                        </div>
                     </TabsContent>
                   </>
                 )}
