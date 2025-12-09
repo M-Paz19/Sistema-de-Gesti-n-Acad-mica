@@ -48,6 +48,8 @@ import {
   generarReportePublico,
   filtrarEstudiantesNoElegibles,
   EstudianteOrdenamientoResponse,
+  resolverInconsistencia,
+  InconsistenciaDto
 } from '../services/api';
 
 export function ProcesamientoModule() {
@@ -66,10 +68,14 @@ export function ProcesamientoModule() {
   const [simcaResponse, setSimcaResponse] = useState<SimcaCargaResponse | null>(null);
   const [datosAcademicos, setDatosAcademicos] = useState<DatosAcademicoResponse[]>([]);
   const [isValidating, setIsValidating] = useState(false);
+  const [busquedaAcademica, setBusquedaAcademica] = useState("");
+  const [filtroEstadoAptitud, setFiltroEstadoAptitud] = useState<"TODOS" | "POSIBLE_NIVELADO">("TODOS");
+
   
   // --- Modales ---
   const [isReviewModalOpen, setIsReviewModalOpen] = useState(false);
   const [selectedRespuesta, setSelectedRespuesta] = useState<RespuestaFormulario | null>(null);
+  const [selectedInconsistencia, setSelectedInconsistencia] = useState<InconsistenciaDto | null>(null); 
   const [manualCodigo, setManualCodigo] = useState('');
   const [isNiveladoModalOpen, setIsNiveladoModalOpen] = useState(false);
   const [selectedDatoAcademico, setSelectedDatoAcademico] = useState<DatosAcademicoResponse | null>(null);
@@ -81,6 +87,13 @@ export function ProcesamientoModule() {
   const [estudiantesOrdenados, setEstudiantesOrdenados] = useState<EstudianteOrdenamientoResponse[]>([]);
   const [isAssigning, setIsAssigning] = useState(false);
 
+  useEffect(() => {
+     if (!datosAcademicos || datosAcademicos.length === 0) {
+    setEstudiantesOrdenados([]);
+    return;
+  }
+  })
+
   // Carga inicial
   useEffect(() => { loadPeriodos(); }, []);
 
@@ -90,6 +103,19 @@ export function ProcesamientoModule() {
       recargarDatos(selectedPeriodo);
     }
   }, [selectedPeriodo]); 
+
+const datosAcademicosFiltrados = datosAcademicos.filter((d) => {
+  const texto = busquedaAcademica.toLowerCase();
+
+  const coincideBusqueda =
+    d.codigoEstudiante?.toLowerCase().includes(texto) ||
+    d.nombres?.toLowerCase().includes(texto) ||
+    d.apellidos?.toLowerCase().includes(texto) ||
+    d.programa?.toLowerCase().includes(texto);
+
+  const coincideEstado =filtroEstadoAptitud === "TODOS"? true: d.estadoAptitud === "POSIBLE_NIVELADO";
+    return coincideBusqueda && coincideEstado;
+    }); 
 
 
   const recargarDatos = async (periodo: Periodo) => {
@@ -109,12 +135,13 @@ export function ProcesamientoModule() {
     } finally {
         setIsLoadingRespuestas(false);
     }
-
     const estadosConAcademicos = [
         'PROCESO_CALCULO_AVANCE', 
         'PROCESO_CALCULO_APTITUD', 
         'PROCESO_FILTRADO_NO_ELEGIBLES',
         'EN_PROCESO_ASIGNACION', 
+        'INCONSISTENCIA_SIMCA',
+        'FORMATO_INVALIDO',
         'PROCESO_REVISION_POTENCIALES_NIVELADOS', 
         'PROCESO_CARGA_SIMCA', 
         'PROCESO_CONFIRMACION_SIMCA', 
@@ -132,32 +159,45 @@ export function ProcesamientoModule() {
     }
 
     if (periodo.estado === 'EN_PROCESO_ASIGNACION') {
-        // CASO A: Estamos listos para asignar, traemos los Aptos.
-        try {
-            const dataRanking = await obtenerAptosOrdenados(pid);
-            const sorted = [...dataRanking].sort((a, b) => (b.avance || 0) - (a.avance || 0));
-            setEstudiantesOrdenados(sorted);
-        } catch (error) {
-            setEstudiantesOrdenados([]); 
-        }
+  try {
+    const dataRanking = await obtenerAptosOrdenados(pid);
+
+    const fusionados: EstudianteOrdenamientoResponse[] = dataRanking.map((r: any, index: number) => {
+      const acad = datosAcademicos.find(
+        (d) => d.codigoEstudiante === r.codigoEstudiante
+      );
+
+      return {
+        codigoEstudiante: r.codigoEstudiante,
+        nombreCompleto: acad ? `${acad.nombres} ${acad.apellidos}` : r.codigoEstudiante,
+        programa: r.programa ?? acad?.programa ?? '',
+        promedio: acad?.promedio ?? 0,
+        avance: acad?.porcentajeAvance ?? r.avance ?? 0,
+        electivasFaltantes: acad?.electivasFaltantes ?? 0,
+        puesto: index + 1
+      };
+    });
+
+    const ordenados = fusionados.sort((a, b) => (b.avance || 0) - (a.avance || 0));
+
+    setEstudiantesOrdenados(ordenados);
+  } catch (error) {
+    setEstudiantesOrdenados([]);
+  }
     } else if (periodo.estado === 'ASIGNACION_PROCESADA' || periodo.estado === 'CERRADO') {
         // CASO B: Ya se asignó o está cerrado.
         try {
-            const resultados = await generarReporteRanking(pid);
-            if (Array.isArray(resultados)) {
-                 const mapeados: EstudianteOrdenamientoResponse[] = resultados.map((r: any, index: number) => ({
-                    codigoEstudiante: r.codigo,
-                    nombreCompleto: r.nombre,
-                    programa: r.programa,
-                    promedio: r.promedio || 0,
-                    avance: r.avance || 0,
-                    electivasFaltantes: 0, 
-                    puesto: index + 1
-                }));
-                setEstudiantesOrdenados(mapeados);
-            } else {
-                setEstudiantesOrdenados([]);
-            }
+            const resultados = await obtenerRankingJson(pid);
+
+            const mapeados = resultados.map((r, index) => ({
+            codigoEstudiante: r.codigoEstudiante,
+            nombreCompleto: `${r.nombres} ${r.apellidos}`,
+            programa: r.programa,
+            promedio: r.promedioCarrera ?? 0,
+            avance: r.porcentajeAvance ?? 0,
+            electivasFaltantes: r.creditosPensumNoAprobatorio ?? 0,
+            puesto: index + 1
+            }));
         } catch (error) {
             setEstudiantesOrdenados([]);
         }
@@ -188,18 +228,83 @@ export function ProcesamientoModule() {
   const handleFiltroAntiguedad = async () => { try { await aplicarFiltroAntiguedad(selectedPeriodo!.id); toast.success("Validado OK"); await loadPeriodos(); } catch(e:any){toast.error(e.message)} };
   const handleConfirmarSimca = async () => { try { await confirmarListaParaSimca(selectedPeriodo!.id); toast.success("Confirmado OK"); await loadPeriodos(); setActiveTab('simca'); } catch(e:any){toast.error(e.message)} };
   
-  const handleRevisionManual = async (incluir: boolean) => {
-    if (!selectedRespuesta || !selectedPeriodo) return;
-    try {
-      await revisarManualFormatoInvalido(selectedRespuesta.id, incluir, manualCodigo);
-      toast.success(incluir ? "Incluido" : "Descartado");
-      setIsReviewModalOpen(false); setManualCodigo(''); setSelectedRespuesta(null);
-      recargarDatos(selectedPeriodo);
-    } catch (err: any) { toast.error(err.message); }
-  };
+
+ const handleGuardarCorreccionManual = async (incluir: boolean) => {
+  if (!selectedPeriodo) return;
+
+  try {
+    const esSIMCA = !!selectedInconsistencia;
+    const esFormatoInvalido =
+      selectedRespuesta?.estado === "FORMATO_INVALIDO";
+
+    console.log("Modo corrección:", {
+      esSIMCA,
+      esFormatoInvalido,
+      estadoRespuesta: selectedRespuesta?.estado
+    });
+
+    if (esFormatoInvalido && selectedRespuesta) {
+      await revisarManualFormatoInvalido(
+        selectedRespuesta.id,
+        incluir,
+        manualCodigo
+      );
+
+      toast.success(
+        incluir
+          ? "Código corregido e incluido"
+          : "Estudiante descartado"
+      );
+    } 
+    else if (esSIMCA && selectedInconsistencia?.respuestaId) {
+      await resolverInconsistencia(
+        selectedInconsistencia.respuestaId,
+        incluir,
+        manualCodigo
+      );
+
+      toast.success(
+        incluir
+          ? "Inconsistencia resuelta"
+          : "Registro descartado"
+      );
+    } 
+    else {
+      toast.error("Estado no válido para corrección");
+      return;
+    }
+
+    // Limpieza
+    setIsReviewModalOpen(false);
+    setManualCodigo("");
+    setSelectedRespuesta(null);
+    setSelectedInconsistencia(null);
+
+    recargarDatos(selectedPeriodo);
+  } catch (err: any) {
+    toast.error(err.message || "Error al procesar la corrección");
+  }
+};
+
+
+
 
   const handleDescargarLotes = async () => { if (!selectedPeriodo) return; try { const blob = await descargarLotesSimca(selectedPeriodo.id); const url = window.URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = `Lotes.zip`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); document.body.removeChild(a); } catch (err: any) { toast.error(err.message); } };
-  const handleCargarSimca = async () => { if (!selectedPeriodo || !simcaFiles) return toast.error("Seleccione archivo"); setIsUploadingSimca(true); try { const res = await cargarDatosSimca(selectedPeriodo.id, Array.from(simcaFiles)); setSimcaResponse(res); toast.success(res.mensaje); await loadPeriodos(); if(selectedPeriodo) recargarDatos(selectedPeriodo); } catch (err: any) { toast.error(err.message); } finally { setIsUploadingSimca(false); } };
+  const handleCargarSimca = async () => { if (!selectedPeriodo || !simcaFiles) return toast.error("Seleccione archivo"); setIsUploadingSimca(true); try { const res = await cargarDatosSimca(selectedPeriodo.id, Array.from(simcaFiles)); setSimcaResponse(res);
+                if (Array.isArray(res.detalleInconsistencias)) {
+            setRespuestas(prev =>
+                prev.map(r => {
+                const inc = res.detalleInconsistencias.find(
+                    i => i.respuestaId === r.id
+                );
+                if (inc) {
+                    return { ...r, estado: 'INCONSISTENTE_SIMCA' };
+                }
+                return r;
+                })
+            );
+            }
+    toast.success(res.mensaje); await loadPeriodos(); if(selectedPeriodo) recargarDatos(selectedPeriodo); } catch (err: any) { toast.error(err.message); } finally { setIsUploadingSimca(false); } };
 
   // --- HANDLERS PESTAÑA 3 ---
   const handlePreseleccionarNivelados = async () => {
@@ -253,14 +358,12 @@ export function ProcesamientoModule() {
       }
   };
 
-  // --- NUEVO: CERRAR PERIODO ---
   const handleCerrarPeriodoDefinitivamente = async () => {
     if (!selectedPeriodo) return;
     try {
         await cerrarPeriodoAcademico(selectedPeriodo.id);
         toast.success('Periodo cerrado exitosamente. El proceso ha finalizado.');
         
-        // Actualizamos estado local
         const periodoActualizado = { ...selectedPeriodo, estado: 'CERRADO' };
         setSelectedPeriodo(periodoActualizado);
         await loadPeriodos();
@@ -442,6 +545,7 @@ export function ProcesamientoModule() {
                           <SelectContent>
                               <SelectItem value="TODOS">Todos</SelectItem>
                               <SelectItem value="FORMATO_INVALIDO">Formato Inválido</SelectItem>
+                              <SelectItem value="INCONSISTENTE_SIMCA">Inconsistente simca</SelectItem>
                           </SelectContent>
                       </Select>
                   </div>
@@ -473,14 +577,35 @@ export function ProcesamientoModule() {
                                    <TableCell>{r.nombreEstudiante} {r.apellidosEstudiante}</TableCell>
                                    <TableCell><Badge variant={getBadgeVariant(r.estado)}>{r.estado}</Badge></TableCell>
                                    <TableCell>
-                                      {(r.estado === 'FORMATO_INVALIDO' || r.estado === 'INCLUIDO') && (
-                                          <Button size="sm" variant="ghost" onClick={() => {
-                                                  setSelectedRespuesta(r);
-                                                  setManualCodigo(r.codigoEstudiante);
-                                                  setIsReviewModalOpen(true);
-                                          }}>
-                                                  <Edit className="h-4 w-4 text-blue-600"/>
-                                          </Button>
+                                      {(r.estado === 'FORMATO_INVALIDO' ||
+                                        r.estado === 'INCONSISTENTE_SIMCA'
+                                        ) && (
+                                          <Button
+                                        size="sm"
+                                        variant="outline"
+                                       onClick={() => {
+                                        setSelectedRespuesta(null);
+                                        setSelectedInconsistencia(null);
+
+                                        if (r.estado === "INCONSISTENTE_SIMCA") {
+                                            setSelectedInconsistencia({
+                                            respuestaId: r.id,
+                                            codigoEstudianteCsv: r.codigoEstudiante,
+                                            nombreEstudianteCsv: r.nombreEstudiante,
+                                            error: "Datos no cargados",
+                                            archivoOrigen: "SIMCA"
+                                            });
+                                        } else {
+                                            // FORMATO_INVALIDO
+                                            setSelectedRespuesta(r);
+                                        }
+
+                                        setManualCodigo(r.codigoEstudiante || "");
+                                        setIsReviewModalOpen(true);
+                                        }}
+                                        >
+                                        Revisar
+                                        </Button>
                                       )}
                                    </TableCell>
                                 </TableRow>
@@ -612,102 +737,204 @@ export function ProcesamientoModule() {
                 </div>
             </TabsContent>
 
-            {/* --- PESTAÑA 3: ACADEMICA --- */}
-            <TabsContent value="academica" className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden">
-                 <div className="flex gap-4 bg-white p-4 rounded-lg border shadow-sm flex-wrap items-center shrink-0">
-                      
-                      {/* PASO 1: Identificar Nivelados */}
-                      <Button 
-                        variant="outline" 
-                        onClick={handlePreseleccionarNivelados} 
-                        disabled={isValidating || !['PROCESO_CARGA_SIMCA', 'PROCESO_CONFIRMACION_SIMCA', 'PROCESO_REVISION_POTENCIALES_NIVELADOS'].includes(selectedPeriodo?.estado || '')}
-                        className={cn(['PROCESO_CARGA_SIMCA', 'PROCESO_CONFIRMACION_SIMCA', 'PROCESO_REVISION_POTENCIALES_NIVELADOS'].includes(selectedPeriodo?.estado || '') ? "border-blue-500 text-blue-700 bg-blue-50" : "")}
-                      >
-                         <HelpCircle className="mr-2 h-4 w-4"/> 1. Identificar Nivelados
-                      </Button>
-                      
-                      {/* PASO 2: Calcular Avance */}
-                      <Button 
-                        variant="outline" 
-                        onClick={handleCalcularAvance} 
-                        disabled={isValidating || !['PROCESO_CALCULO_AVANCE', 'PROCESO_REVISION_POTENCIALES_NIVELADOS'].includes(selectedPeriodo?.estado || '')}
-                        className={cn(['PROCESO_CALCULO_AVANCE', 'PROCESO_REVISION_POTENCIALES_NIVELADOS'].includes(selectedPeriodo?.estado || '') ? "border-blue-500 text-blue-700 bg-blue-50 shadow-md ring-1 ring-blue-200" : "")}
-                      >
-                         <CheckCircle className="mr-2 h-4 w-4"/> 2. Calcular Avance
-                      </Button>
-                      
-                      {/* PASO 3: Verificar Aptitud */}
-                      <Button
-                        onClick={handleVerificarAptitud}
-                        disabled={isValidating || selectedPeriodo?.estado !== 'PROCESO_CALCULO_APTITUD'}
-                        className={cn("bg-white text-gray-700 border hover:bg-gray-100", selectedPeriodo?.estado === 'PROCESO_CALCULO_APTITUD' ? "border-blue-500 text-blue-700 bg-blue-50 shadow-md ring-1 ring-blue-200" : "")}
-                        variant="outline"
-                      >
-                         <Check className="mr-2 h-4 w-4"/> 3. Verificar Aptitud
-                      </Button>
+           {/* --- PESTAÑA 3: ACADEMICA --- */}
+                <TabsContent
+                value="academica"
+                className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden"
+                >
+                {/* Barra superior */}
+                <div className="flex gap-4 bg-white p-4 rounded-lg border shadow-sm flex-wrap items-center shrink-0">
+                    {/* Buscador */}
+                    <div className="relative w-full max-w-sm">
+                    <Search className="absolute left-2 top-2.5 h-4 w-4 text-muted-foreground" />
+                    <Input
+                        placeholder="Buscar..."
+                        value={busquedaAcademica}
+                        onChange={(e) => setBusquedaAcademica(e.target.value)}
+                        className="pl-8"
+                    />
+                    </div>
 
-                      {/* PASO 4: Filtrar No Elegibles */}
-                      <Button
-                        onClick={handleFiltrarNoElegibles}
-                        disabled={isValidating || selectedPeriodo?.estado !== 'PROCESO_FILTRADO_NO_ELEGIBLES'}
-                        className={cn(
-                            "bg-white text-gray-700 border hover:bg-gray-100", 
-                            selectedPeriodo?.estado === 'PROCESO_FILTRADO_NO_ELEGIBLES' 
-                                ? "bg-blue-600 text-white hover:bg-blue-700 border-transparent shadow-md" 
-                                : ""
-                        )}
-                      >
-                         <UserMinus className="mr-2 h-4 w-4"/> 4. Filtrar No Elegibles
-                      </Button>
-                 </div>
-                 
-                 <Card className="flex-1 overflow-hidden border shadow-sm">
+                    {/* Filtro de estado */}
+                    <select
+                    value={filtroEstadoAptitud}
+                    onChange={(e) =>
+                        setFiltroEstadoAptitud(
+                        e.target.value as "TODOS" | "POSIBLE_NIVELADO"
+                        )
+                    }
+                    className="border rounded-md px-3 py-2 text-sm bg-white shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    >
+                    <option value="TODOS">Todos</option>
+                    <option value="POSIBLE_NIVELADO">Posible nivelado</option>
+                    </select>
+
+                    {/* PASO 1: Identificar Nivelados */}
+                    <Button
+                    variant="outline"
+                    onClick={handlePreseleccionarNivelados}
+                    disabled={
+                        isValidating ||
+                        ![
+                        "PROCESO_CARGA_SIMCA",
+                        "PROCESO_CONFIRMACION_SIMCA",
+                        "PROCESO_REVISION_POTENCIALES_NIVELADOS",
+                        ].includes(selectedPeriodo?.estado || "")
+                    }
+                    className={cn(
+                        [
+                        "PROCESO_CARGA_SIMCA",
+                        "PROCESO_CONFIRMACION_SIMCA",
+                        "PROCESO_REVISION_POTENCIALES_NIVELADOS",
+                        ].includes(selectedPeriodo?.estado || "")
+                        ? "border-blue-500 text-blue-700 bg-blue-50"
+                        : ""
+                    )}
+                    >
+                    <HelpCircle className="mr-2 h-4 w-4" />
+                    1. Identificar Nivelados
+                    </Button>
+
+                    {/* PASO 2: Calcular Avance */}
+                    <Button
+                    variant="outline"
+                    onClick={handleCalcularAvance}
+                    disabled={
+                        isValidating ||
+                        ![
+                        "PROCESO_CALCULO_AVANCE",
+                        "PROCESO_REVISION_POTENCIALES_NIVELADOS",
+                        ].includes(selectedPeriodo?.estado || "")
+                    }
+                    className={cn(
+                        [
+                        "PROCESO_CALCULO_AVANCE",
+                        "PROCESO_REVISION_POTENCIALES_NIVELADOS",
+                        ].includes(selectedPeriodo?.estado || "")
+                        ? "border-blue-500 text-blue-700 bg-blue-50 shadow-md ring-1 ring-blue-200"
+                        : ""
+                    )}
+                    >
+                    <CheckCircle className="mr-2 h-4 w-4" />
+                    2. Calcular Avance
+                    </Button>
+
+                    {/* PASO 3: Verificar Aptitud */}
+                    <Button
+                    onClick={handleVerificarAptitud}
+                    disabled={
+                        isValidating ||
+                        selectedPeriodo?.estado !== "PROCESO_CALCULO_APTITUD"
+                    }
+                    className={cn(
+                        "bg-white text-gray-700 border hover:bg-gray-100",
+                        selectedPeriodo?.estado === "PROCESO_CALCULO_APTITUD"
+                        ? "border-blue-500 text-blue-700 bg-blue-50 shadow-md ring-1 ring-blue-200"
+                        : ""
+                    )}
+                    variant="outline"
+                    >
+                    <Check className="mr-2 h-4 w-4" />
+                    3. Verificar Aptitud
+                    </Button>
+
+                    {/* PASO 4: Filtrar No Elegibles */}
+                    <Button
+                    onClick={handleFiltrarNoElegibles}
+                    disabled={
+                        isValidating ||
+                        selectedPeriodo?.estado !== "PROCESO_FILTRADO_NO_ELEGIBLES"
+                    }
+                    className={cn(
+                        "bg-white text-gray-700 border hover:bg-gray-100",
+                        selectedPeriodo?.estado === "PROCESO_FILTRADO_NO_ELEGIBLES"
+                        ? "bg-blue-600 text-white hover:bg-blue-700 border-transparent shadow-md"
+                        : ""
+                    )}
+                    >
+                    <UserMinus className="mr-2 h-4 w-4" />
+                    4. Filtrar No Elegibles
+                    </Button>
+                </div>
+
+                {/* Tabla */}
+                <Card className="flex-1 overflow-hidden border shadow-sm">
                     <CardContent className="p-0 h-full overflow-auto">
-                        <Table>
-                           <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
-                              <TableRow>
-                                 <TableHead>Código</TableHead>
-                                 <TableHead>Estudiante</TableHead>
-                                 <TableHead className="text-center">Créditos</TableHead>
-                                 <TableHead className="text-center w-[100px]">% Avance</TableHead>
-                                 <TableHead>Estado Aptitud</TableHead>
-                                 <TableHead>Acciones</TableHead>
-                              </TableRow>
-                           </TableHeader>
-                           <TableBody>
-                              {datosAcademicos.map((d) => (
-                                    <TableRow key={d.id}>
-                                       <TableCell className="font-mono text-xs">{d.codigoEstudiante}</TableCell>
-                                       <TableCell className="text-xs">
-                                            <div className="font-medium">{d.nombres} {d.apellidos}</div>
-                                            <div className="text-muted-foreground">{d.programa}</div>
-                                       </TableCell>
-                                       <TableCell className="text-center text-xs">{d.creditosAprobados}</TableCell>
-                                       <TableCell className="text-center font-bold text-[#003366] text-xs">
-                                            {d.porcentajeAvance ? `${d.porcentajeAvance}%` : '-'}
-                                       </TableCell>
-                                       <TableCell>
-                                            <Badge
-                                                 variant={getBadgeVariant(d.estadoAptitud)}
-                                                 className={cn("whitespace-nowrap text-[10px]", getCustomBadgeStyle(d.estadoAptitud), d.estadoAptitud === 'EXCLUIDO_POR_ELECTIVAS' ? 'bg-red-100 text-red-800 border-red-200' : '')}
-                                            >
-                                                 {d.estadoAptitud.replace(/_/g, ' ')}
-                                            </Badge>
-                                       </TableCell>
-                                       <TableCell>
-                                            {(d.estadoAptitud === 'POSIBLE_NIVELADO' || d.estadoAptitud === 'PENDIENTE_VALIDACION') && (
-                                                <Button size="sm" className="h-7 text-xs bg-[#FDB913] text-[#003366] hover:bg-[#e5a812]" onClick={() => handleVerificarNivelado(d)}>
-                                                     Nivelación
-                                                </Button>
-                                            )}
-                                       </TableCell>
-                                    </TableRow>
-                              ))}
-                           </TableBody>
-                        </Table>
+                    <Table>
+                        <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
+                        <TableRow>
+                            <TableHead>Código</TableHead>
+                            <TableHead>Estudiante</TableHead>
+                            <TableHead className="text-center">Créditos</TableHead>
+                            <TableHead className="text-center w-[100px]">
+                            % Avance
+                            </TableHead>
+                            <TableHead>Estado Aptitud</TableHead>
+                            <TableHead>Acciones</TableHead>
+                        </TableRow>
+                        </TableHeader>
+
+                        <TableBody>
+                        {datosAcademicosFiltrados.map((d) => (
+                            <TableRow key={d.id}>
+                            <TableCell className="font-mono text-xs">
+                                {d.codigoEstudiante}
+                            </TableCell>
+
+                            <TableCell className="text-xs">
+                                <div className="font-medium">
+                                {d.nombres} {d.apellidos}
+                                </div>
+                                <div className="text-muted-foreground">
+                                {d.programa}
+                                </div>
+                            </TableCell>
+
+                            <TableCell className="text-center text-xs">
+                                {d.creditosAprobados}
+                            </TableCell>
+
+                            <TableCell className="text-center font-bold text-[#003366] text-xs">
+                                {d.porcentajeAvance
+                                ? `${d.porcentajeAvance}%`
+                                : "-"}
+                            </TableCell>
+
+                            <TableCell>
+                                <Badge
+                                variant={getBadgeVariant(d.estadoAptitud)}
+                                className={cn(
+                                    "whitespace-nowrap text-[10px]",
+                                    getCustomBadgeStyle(d.estadoAptitud),
+                                    d.estadoAptitud ===
+                                    "EXCLUIDO_POR_ELECTIVAS"
+                                    ? "bg-red-100 text-red-800 border-red-200"
+                                    : ""
+                                )}
+                                >
+                                {d.estadoAptitud.replace(/_/g, " ")}
+                                </Badge>
+                            </TableCell>
+
+                            <TableCell>
+                                {d.estadoAptitud === "POSIBLE_NIVELADO" && (
+                                <Button
+                                    size="sm"
+                                    variant="outline"
+                                    onClick={() => handleVerificarNivelado(d)}
+                                >
+                                    Nivelación
+                                </Button>
+                                )}
+                            </TableCell>
+                            </TableRow>
+                        ))}
+                        </TableBody>
+                    </Table>
                     </CardContent>
-                 </Card>
-            </TabsContent>
+                </Card>
+                </TabsContent>
+
 
 {/* --- PESTAÑA 4: ASIGNACIÓN --- */}
             <TabsContent value="asignacion" className="flex-1 overflow-hidden flex flex-col gap-4 data-[state=inactive]:hidden">
@@ -802,8 +1029,6 @@ export function ProcesamientoModule() {
                                         <TableHead className="font-semibold bg-gray-100">Estudiante</TableHead>
                                         <TableHead className="font-semibold bg-gray-100">Programa</TableHead>
                                         <TableHead className="text-center font-semibold bg-gray-100">Avance</TableHead>
-                                        <TableHead className="text-center font-semibold bg-gray-100">Promedio</TableHead>
-                                        <TableHead className="text-center font-semibold bg-gray-100">Faltantes</TableHead>
                                     </TableRow>
                                 </TableHeader>
                                 <TableBody>
@@ -835,12 +1060,7 @@ export function ProcesamientoModule() {
                                                         {est.avance}%
                                                     </Badge>
                                                 </TableCell>
-                                                <TableCell className="text-center text-xs font-medium text-gray-700">{est.promedio}</TableCell>
-                                                <TableCell className="text-center">
-                                                    <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-gray-100 text-xs font-bold text-gray-600">
-                                                        {est.electivasFaltantes}
-                                                    </span>
-                                                </TableCell>
+                                                
                                             </TableRow>
                                         ))
                                     )}
@@ -852,79 +1072,176 @@ export function ProcesamientoModule() {
             </TabsContent>
          </Tabs>
       </div>
+;       {/* MODAL – Corrección Manual */}
+            <Dialog 
+            open={isReviewModalOpen} 
+            onOpenChange={(open) => {
+                // Solo permitir apertura si es inconsistencia válida
+                if (!open) setIsReviewModalOpen(false);
 
-      {/* Modales */}
-      <Dialog open={isReviewModalOpen} onOpenChange={setIsReviewModalOpen}>
-         <DialogContent>
-            <DialogHeader>
-                <DialogTitle>Corregir Código Estudiante</DialogTitle>
-                <DialogDescription>Edite el código para que cumpla con el formato.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-               <Input value={manualCodigo} onChange={e => setManualCodigo(e.target.value)} placeholder="Nuevo Código"/>
-               <div className="flex justify-end gap-2">
-                  <Button variant="destructive" onClick={() => handleRevisionManual(false)}>Descartar</Button>
-                  <Button onClick={() => handleRevisionManual(true)}>Guardar</Button>
-               </div>
-            </div>
-         </DialogContent>
-      </Dialog>
-      <Dialog open={isNiveladoModalOpen} onOpenChange={setIsNiveladoModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[90vh] overflow-y-auto">
-           <DialogHeader>
-               <DialogTitle>Verificación Nivelación</DialogTitle>
-               <DialogDescription>Suba la historia académica para validar las materias.</DialogDescription>
-           </DialogHeader>
-           <div className="space-y-6">
-              {!reporteNivelacion ? (
-                  <div className="space-y-4 border p-4 rounded bg-muted/20">
-                      <Label>1. Subir Historia Académica (Excel)</Label>
-                      <Input type="file" accept=".xlsx" onChange={e => setHistoriaFile(e.target.files?.[0] || null)} />
-                      <Button onClick={handleGenerarReporte} disabled={!historiaFile || isGeneratingReport}>
-                          {isGeneratingReport ? "Generando..." : "Generar Reporte"}
-                      </Button>
-                  </div>
-              ) : (
-                  <div className="space-y-4">
-                      <Alert className={reporteNivelacion.nivelado ? "bg-green-50 border-green-200" : "bg-yellow-50 border-yellow-200"}>
-                          <AlertDescription>Resultado: {reporteNivelacion.nivelado ? "CUMPLE" : "NO CUMPLE"}</AlertDescription>
-                      </Alert>
-                      <div className="border rounded-md max-h-[300px] overflow-auto">
-                          <Table>
-                              <TableHeader>
-                                  <TableRow>
-                                      <TableHead>Materia Plan</TableHead>
-                                      <TableHead>Semestre</TableHead>
-                                      <TableHead>Estado</TableHead>
-                                      <TableHead>Observación</TableHead>
-                                  </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                  {reporteNivelacion.comparacionMaterias.map((mat, idx) => (
-                                      <TableRow key={idx}>
-                                          <TableCell className="text-xs">{mat.nombre}</TableCell>
-                                          <TableCell className="text-center">{mat.semestre}</TableCell>
-                                          <TableCell>
-                                              {mat.aprobada
-                                                ? <Badge className="bg-green-600">Aprobada</Badge>
-                                                : <Badge variant="outline" className="text-red-600 border-red-200">Pendiente</Badge>
-                                              }
-                                          </TableCell>
-                                          <TableCell className="text-xs text-muted-foreground">{mat.observacion}</TableCell>
-                                      </TableRow>
-                                  ))}
-                              </TableBody>
-                          </Table>
-                      </div>
-                      <div className="flex justify-end gap-4 pt-4 border-t">
-                          <Button variant="outline" onClick={() => handleDecisionNivelado(false)}>Confirmar NO NIVELADO</Button>
-                          <Button className="bg-green-600" onClick={() => handleDecisionNivelado(true)}>Confirmar NIVELADO</Button>
-                      </div>
-                  </div>
-              )}
-           </div>
-        </DialogContent>
-      </Dialog>
+                const estado =
+                selectedRespuesta?.estado ||
+                (selectedInconsistencia ? "INCONSISTENTE_SIMCA" : undefined);
+
+                const esValido =
+            estado === "INCONSISTENTE_SIMCA" ||
+            estado === "FORMATO_INVALIDO";
+
+
+                if (open && esValido) {
+                setIsReviewModalOpen(true);
+                }
+            }}
+            >
+            <DialogContent className="w-[380px] max-w-[90vw] p-6 rounded-xl">
+                <DialogHeader>
+                    <DialogTitle>
+                    {selectedInconsistencia
+                        ? "Corregir Inconsistencia SIMCA"
+                        : "Corregir Código de Estudiante"}
+                    </DialogTitle>
+
+                    <DialogDescription className="text-sm text-gray-500">
+                    {selectedInconsistencia
+                        ? "El registro aparece como INCONSISTENTE_SIMCA. Puede corregir el código o descartar el registro."
+                        : "El código no cumple el formato esperado. Puede editarlo o descartar el registro."}
+                    </DialogDescription>
+                </DialogHeader>
+
+                <div className="space-y-4 mt-4">
+                    <Input
+                    value={manualCodigo}
+                    onChange={(e) => setManualCodigo(e.target.value)}
+                    placeholder="Nuevo código"
+                    disabled={false}
+                    />
+
+                    <div className="flex justify-end gap-2 pt-3">
+                    <Button
+                        variant="destructive"
+                        onClick={() => handleGuardarCorreccionManual(false)}
+                    >
+                        Descartar
+                    </Button>
+
+                    <Button
+                        className="bg-[#003366] hover:bg-[#002244]"
+                        onClick={() => handleGuardarCorreccionManual(true)}
+                    >
+                        Guardar cambios
+                    </Button>
+                    </div>
+                </div>
+                </DialogContent>
+
+            </Dialog>
+
+
+
+                <Dialog open={isNiveladoModalOpen} onOpenChange={setIsNiveladoModalOpen}>
+                    <DialogContent className="max-w-6xl w-[95vw] max-h-[90vh] overflow-y-auto p-6">
+                        <DialogHeader>
+                        <DialogTitle>Verificación Nivelación</DialogTitle>
+                        <DialogDescription>
+                            Suba la historia académica para validar las materias.
+                        </DialogDescription>
+                        </DialogHeader>
+
+                        <div className="space-y-6 mt-4">
+                        {!reporteNivelacion ? (
+                            <div className="space-y-4 border p-4 rounded-lg bg-muted/20">
+                            <Label>1. Subir Historia Académica (Excel)</Label>
+
+                            <Input
+                                type="file"
+                                accept=".xlsx,.xls"
+                                onChange={(e) => setHistoriaFile(e.target.files?.[0] || null)}
+                            />
+
+                            <Button
+                                onClick={handleGenerarReporte}
+                                disabled={!historiaFile || isGeneratingReport}
+                            >
+                                {isGeneratingReport ? "Generando..." : "Generar Reporte"}
+                            </Button>
+                            </div>
+                        ) : (
+                            <div className="space-y-4">
+                            <Alert
+                                className={
+                                reporteNivelacion.nivelado
+                                    ? "bg-green-50 border-green-200"
+                                    : "bg-yellow-50 border-yellow-200"
+                                }
+                            >
+                                <AlertDescription>
+                                Resultado:{" "}
+                                <span className="font-semibold">
+                                    {reporteNivelacion.nivelado ? "CUMPLE" : "NO CUMPLE"}
+                                </span>
+                                </AlertDescription>
+                            </Alert>
+
+                            {/* Contenedor de la tabla con scroll */}
+                            <div className="border rounded-lg max-h-[450px] overflow-auto">
+                                <Table>
+                                <TableHeader className="sticky top-0 bg-white z-10 shadow-sm">
+                                    <TableRow>
+                                    <TableHead>Materia Plan</TableHead>
+                                    <TableHead>Semestre</TableHead>
+                                    <TableHead>Estado</TableHead>
+                                    <TableHead>Observación</TableHead>
+                                    </TableRow>
+                                </TableHeader>
+
+                                <TableBody>
+                                    {reporteNivelacion.comparacionMaterias.map((mat, idx) => (
+                                    <TableRow key={idx}>
+                                        <TableCell className="text-sm">{mat.nombre}</TableCell>
+                                        <TableCell className="text-center">
+                                        {mat.semestre}
+                                        </TableCell>
+                                        <TableCell>
+                                        {mat.aprobada ? (
+                                            <Badge className="bg-green-600">Aprobada</Badge>
+                                        ) : (
+                                            <Badge
+                                            variant="outline"
+                                            className="text-red-600 border-red-200"
+                                            >
+                                            Pendiente
+                                            </Badge>
+                                        )}
+                                        </TableCell>
+                                        <TableCell className="text-xs text-muted-foreground">
+                                        {mat.observacion}
+                                        </TableCell>
+                                    </TableRow>
+                                    ))}
+                                </TableBody>
+                                </Table>
+                            </div>
+
+                            <div className="flex justify-end gap-4 pt-4 border-t">
+                                <Button
+                                variant="outline"
+                                onClick={() => handleDecisionNivelado(false)}
+                                >
+                                Confirmar NO NIVELADO
+                                </Button>
+
+                                <Button
+                                className="bg-green-600 hover:bg-green-700"
+                                onClick={() => handleDecisionNivelado(true)}
+                                >
+                                Confirmar NIVELADO
+                                </Button>
+                            </div>
+                            </div>
+                        )}
+                        </div>
+                    </DialogContent>
+                </Dialog>
     </div>
   );
 }

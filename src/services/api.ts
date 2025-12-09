@@ -221,6 +221,55 @@ export interface SimcaCargaResponse {
   detalleInconsistencias: InconsistenciaDto[];
 }
 
+export interface DistribucionAsignacionesResponse {
+    distribucion: { cantidadAsignadas: number; cantidadEstudiantes: number }[];
+    totalEstudiantes: number;
+}
+
+export interface DistribucionAsignacionesPorProgramaResponse {
+    distribucion: { programa: string; cantidadAsignadas: number }[];
+}
+
+export interface ItemResumenEstado {
+    estado: string;
+    titulo: string; 
+    descripcion: string;
+    cantidad: number;
+}
+
+export interface ResumenProcesamientoPeriodoResponse {
+    resumenFormulario: ItemResumenEstado[];
+    resumenAptitud: ItemResumenEstado[];
+    totalProcesados: number;
+}
+
+export interface ItemPopularidad {
+    codigoElectiva: string;
+    nombreElectiva: string;
+    totalSelecciones: number;
+    opcion1: number;
+    opcion2: number;
+    opcion3: number; 
+}
+
+export interface PopularidadElectivasResponse {
+    ranking: ItemPopularidad[];
+}
+
+export interface EstudianteBusquedaResponse {
+    codigo: string;
+    nombreCompleto: string;
+    programa: string;
+}
+
+export interface HistorialEstudiantePeriodoResponse {
+    periodo: string;
+    promedio: number;
+    avance: number;
+    estadoAptitud: string;
+    electivasSolicitadas: string[];
+    electivasAsignadas: string[];
+}
 // ==========================================
 //             DEPARTAMENTOS
 // ==========================================
@@ -603,19 +652,26 @@ export async function aplicarFiltroAntiguedad(periodoId: number): Promise<Cambio
   return res.json();
 }
 
-export async function revisarManualFormatoInvalido(respuestaId: number, incluir: boolean, nuevoCodigo: string): Promise<RespuestaFormularioDesicionResponse> {
-  const res = await fetch(`${API_URL}/api/procesamiento/respuestas/${respuestaId}/revision-manual?incluir=${incluir}`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ nuevoCodigo: nuevoCodigo || "0" }) 
-  });
-  
+export async function revisarManualFormatoInvalido(respuestaId: number,incluir: boolean,nuevoCodigo: string): Promise<RespuestaFormularioDesicionResponse> {
+  const res = await fetch(
+    `${API_URL}/api/procesamiento/respuestas/${respuestaId}/revision-manual?incluir=${incluir}`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        nuevoCodigo: nuevoCodigo || "0"
+      })
+    }
+  );
+
   if (!res.ok) {
-      const errorData = await res.json().catch(() => ({}));
-      throw new Error(errorData.message || "Error en revisión manual");
+    const text = await res.text();
+    throw new Error(text || "Error al procesar la decisión");
   }
-  return res.json();
+
+  return await res.json();
 }
+
 
 export async function confirmarListaParaSimca(periodoId: number): Promise<CambioEstadoValidacionResponse> {
   const res = await fetch(`${API_URL}/api/procesamiento/periodos/${periodoId}/confirmar-simca`, { method: "POST" });
@@ -700,21 +756,25 @@ export async function preseleccionarNivelados(periodoId: number): Promise<DatosA
     return res.json();
 }
 
-export async function generarReporteNivelado(idDatosAcademicos: number, file: File): Promise<VerificacionNiveladoDTO> {
-    const formData = new FormData();
-    formData.append("archivo", file);
-    
-    const res = await fetch(`${API_URL}/api/validacion-nivelados/reporte/${idDatosAcademicos}`, {
-        method: "POST",
-        body: formData
-    });
-    
-    if (!res.ok) { 
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.message || "Error al generar reporte de nivelación"); 
+export async function generarReporteNivelado( idDatosAcademicos: number, file: File): Promise<VerificacionNiveladoDTO> {
+  const formData = new FormData();
+  formData.append("archivo", file);
+  const res = await fetch(
+    `${API_URL}/api/validacion-nivelados/reporte/${idDatosAcademicos}`, 
+    {
+      method: "POST",
+      body: formData,
     }
-    return res.json();
+  );
+
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || "Error al generar el reporte");
+  }
+
+  return res.json();
 }
+
 
 export async function registrarDecisionFinal(idDatosAcademicos: number, nivelado: boolean): Promise<DatosAcademicoResponse> {
     const res = await fetch(`${API_URL}/api/validacion-nivelados/decision-final/${idDatosAcademicos}?nivelado=${nivelado}`, {
@@ -766,7 +826,6 @@ export async function obtenerAptosOrdenados(periodoId: number): Promise<Estudian
 }
 
 export async function generarReporteTecnico(periodoId: number): Promise<Blob> {
-    // Apunta al nuevo controlador ReporteAsignacionController
     const res = await fetch(`${API_URL}/api/reportes/periodos/${periodoId}/reporte-tecnico`, {
         method: 'GET'
     });
@@ -792,14 +851,72 @@ export async function generarReportePublico(periodoId: number): Promise<Blob> {
 }
 
 
-export async function generarReporteRanking(periodoId: number): Promise<Blob> {
-    const res = await fetch(`${API_URL}/api/consulta-asignacion/periodos/${periodoId}/reporte/ranking`, {
+export async function generarReporteRanking(periodoId: number): Promise<EstudianteOrdenamientoResponse[]> {
+    const res = await fetch(`${API_URL}/api/periodos/${periodoId}/reporte/ranking`, {
         method: 'GET'
     });
 
     if (!res.ok) {
         const errorText = await res.text().catch(() => "Error desconocido");
-        throw new Error(errorText || "Error al descargar reporte de ranking");
+        throw new Error(errorText || "Error al cargar reporte de ranking");
     }
+    return res.json();
+}
+// =========================================================
+//                      ESTADISTICAS
+// =========================================================
+
+export async function fetchDistribucionAsignaciones(periodoId: number): Promise<DistribucionAsignacionesResponse> {
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/distribucion-asignaciones`);
+    if (!res.ok) throw new Error("Error cargando distribución de asignaciones");
+    return res.json();
+}
+
+export async function fetchDistribucionPorPrograma(periodoId: number): Promise<DistribucionAsignacionesPorProgramaResponse> {
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/distribucion-asignaciones-programa`);
+    if (!res.ok) throw new Error("Error cargando distribución por programa");
+    return res.json();
+}
+
+export async function fetchResumenProcesamiento(periodoId: number): Promise<ResumenProcesamientoPeriodoResponse> {
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/resumen-procesamiento`);
+    if (!res.ok) throw new Error("Error cargando resumen de procesamiento");
+    return res.json();
+}
+
+export async function fetchPopularidadElectivas(periodoId: number, incluirDescartados: boolean = false): Promise<PopularidadElectivasResponse> {
+    const endpoint = incluirDescartados 
+        ? "popularidad-electivas-incluyendo-descartados" 
+        : "popularidad-electivas";
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/${endpoint}`);
+    if (!res.ok) throw new Error("Error cargando popularidad");
+    return res.json();
+}
+
+// --- Endpoints de Descarga Excel (BLOB) ---
+
+export async function descargarReporteDistribucionExcel(periodoId: number) {
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/reporte-distribucion`);
+    if (!res.ok) throw new Error("Error al descargar reporte de distribución");
     return res.blob();
+}
+
+export async function descargarReportePopularidadExcel(periodoId: number) {
+    const res = await fetch(`${API_URL}/api/reportes/estadisticas/periodos/${periodoId}/reporte-popularidad`);
+    if (!res.ok) throw new Error("Error al descargar reporte de popularidad");
+    return res.blob();
+}
+
+// --- Endpoints de Historial ---
+
+export async function buscarEstudiantes(filtro: string): Promise<EstudianteBusquedaResponse[]> {
+    const res = await fetch(`${API_URL}/api/reportes/historial/estudiantes?filtro=${encodeURIComponent(filtro)}`);
+    if (!res.ok) throw new Error("Error buscando estudiantes");
+    return res.json();
+}
+
+export async function fetchHistorialEstudiante(codigo: string): Promise<HistorialEstudiantePeriodoResponse[]> {
+    const res = await fetch(`${API_URL}/api/reportes/historial/estudiantes/${codigo}`);
+    if (!res.ok) throw new Error("Error cargando historial");
+    return res.json();
 }
